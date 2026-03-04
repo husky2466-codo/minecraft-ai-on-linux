@@ -17,9 +17,11 @@ const wss = new WebSocketServer({ server });
 app.use(express.json());
 app.use(express.static(join(__dirname, 'public')));
 
-const AGENTS = ['Rook', 'Vex', 'Sage', 'Echo', 'Drift'];
 const MINDCRAFT_PATH = '/home/myroproductions/Projects/minecraft-ai-on-linux/mindcraft';
 const CHROMA_COLLECTIONS = ['rook_memory', 'vex_memory', 'sage_memory', 'echo_memory', 'drift_memory'];
+// Returns current live agent names from MindServer (falls back to all known if empty)
+function liveAgentNames() { return agentList.map(a => a.name); }
+function isValidAgentName(name) { return /^[A-Za-z][A-Za-z0-9_-]{0,31}$/.test(name); }
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
@@ -64,7 +66,7 @@ app.get('/api/metrics', (req, res) => res.json(metrics));
 // --- Agent memory files ---
 app.get('/api/memories/:agent', async (req, res) => {
   const { agent } = req.params;
-  if (!AGENTS.includes(agent)) return res.status(404).json({ error: 'Unknown agent' });
+  if (!isValidAgentName(agent)) return res.status(404).json({ error: 'Unknown agent' });
   try {
     const content = await readRemoteFile(`${MINDCRAFT_PATH}/bots/${agent}/memory.json`);
     res.json(JSON.parse(content));
@@ -152,7 +154,7 @@ const VALID_AGENT_ACTIONS = ['restart', 'stop', 'start'];
 
 app.post('/api/agents/:name/:action', (req, res) => {
   const { name, action } = req.params;
-  if (!AGENTS.includes(name)) return res.status(404).json({ error: 'Unknown agent' });
+  if (!isValidAgentName(name)) return res.status(404).json({ error: 'Unknown agent' });
   if (!VALID_AGENT_ACTIONS.includes(action)) return res.status(400).json({ error: 'Invalid action. Use: restart, stop, start' });
   const sent = sendCommand(`${action}-agent`, name);
   if (!sent) return res.status(503).json({ error: 'MindServer not connected' });

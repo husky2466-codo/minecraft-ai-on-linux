@@ -1,4 +1,4 @@
-// Rolling metrics per agent
+// Rolling metrics per agent — dynamically populated as agents appear in logs
 export const metrics = {
   responseTimes: {},  // { AgentName: [{ ts, ms }, ...] } (last 50)
   commandCounts: {},  // { AgentName: { commandName: count } }
@@ -7,15 +7,13 @@ export const metrics = {
   lastActivity: {},   // { AgentName: timestamp }
 };
 
-const AGENTS = ['Rook', 'Vex', 'Sage', 'Echo', 'Drift'];
-
-AGENTS.forEach(name => {
-  metrics.responseTimes[name] = [];
-  metrics.commandCounts[name] = {};
-  metrics.actionResults[name] = { success: 0, fail: 0 };
-  metrics.totalCalls[name] = 0;
-  metrics.lastActivity[name] = null;
-});
+function ensureAgent(name) {
+  if (!metrics.responseTimes[name]) metrics.responseTimes[name] = [];
+  if (!metrics.commandCounts[name]) metrics.commandCounts[name] = {};
+  if (!metrics.actionResults[name]) metrics.actionResults[name] = { success: 0, fail: 0 };
+  if (metrics.totalCalls[name] == null) metrics.totalCalls[name] = 0;
+  if (metrics.lastActivity[name] == null) metrics.lastActivity[name] = null;
+}
 
 // Track pending LLM calls: { agentName: startTs }
 const pendingTimers = {};
@@ -33,11 +31,13 @@ export function parseMindcraftLine(line) {
     return null;
   }
 
-  // Detect LLM response end: "AgentName full response to system:"
-  const responseMatch = line.match(/^(\w+) full response to system:/);
+  // Detect LLM response end: "AgentName full response to X:" (system, player, or other agent)
+  const responseMatch = line.match(/^(\w+) full response to \w+:/);
   if (responseMatch) {
     const agent = responseMatch[1];
-    if (AGENTS.includes(agent)) {
+    // Only track known agent names (capitalized, not common words)
+    if (/^[A-Z]/.test(agent)) {
+      ensureAgent(agent);
       lastActiveAgent = agent;
       if (pendingTimers[agent]) {
         const ms = ts - pendingTimers[agent];
@@ -55,6 +55,7 @@ export function parseMindcraftLine(line) {
   const cmdMatch = line.match(/commandName: '(![\w]+)'/);
   if (cmdMatch && lastActiveAgent) {
     const cmd = cmdMatch[1];
+    ensureAgent(lastActiveAgent);
     metrics.commandCounts[lastActiveAgent][cmd] = (metrics.commandCounts[lastActiveAgent][cmd] || 0) + 1;
     return { type: 'command', agent: lastActiveAgent, cmd };
   }
@@ -62,13 +63,15 @@ export function parseMindcraftLine(line) {
   // Detect action success: "Agent executed: !xxx and got: Action output:"
   const successMatch = line.match(/Agent executed: (![\w]+) and got: Action output:/);
   if (successMatch && lastActiveAgent) {
+    ensureAgent(lastActiveAgent);
     metrics.actionResults[lastActiveAgent].success++;
     return { type: 'action-result', agent: lastActiveAgent, result: 'success' };
   }
 
-  // Detect action failure: "Could not find", "Failed", action errors
+  // Detect action failure
   const failMatch = line.match(/Could not find|Action failed|cannot|No path found/i);
   if (failMatch && lastActiveAgent) {
+    ensureAgent(lastActiveAgent);
     metrics.actionResults[lastActiveAgent].fail++;
     return { type: 'action-result', agent: lastActiveAgent, result: 'fail' };
   }

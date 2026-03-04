@@ -1156,10 +1156,13 @@ function handleWsMessage({ type, data }) {
 // =====================================================================
 function handleAgentStates(data) {
   // data can be object {Rook: {...}, ...} or array [{name:'Rook', ...}, ...]
+  // Merge instead of replace so agents-status .online flag is preserved
   if (Array.isArray(data)) {
-    data.forEach(a => { agentData[a.name] = a; });
+    data.forEach(a => { agentData[a.name] = { ...agentData[a.name], ...a }; });
   } else if (data && typeof data === 'object') {
-    Object.assign(agentData, data);
+    Object.entries(data).forEach(([name, state]) => {
+      agentData[name] = { ...agentData[name], ...state };
+    });
   }
   renderAgentCards();
   drawMap();
