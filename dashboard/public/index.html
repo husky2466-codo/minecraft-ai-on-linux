@@ -4,13 +4,1875 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Minecraft AI Sim Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --card: #1e2130;
+      --card2: #252840;
+      --accent: #5b6af5;
+      --accent2: #00c8a0;
+      --border: #2e3250;
+      --text: #c8cde8;
+      --text-dim: #6b7099;
+      --sidebar-w: 200px;
+      --c-rook: #e57373;
+      --c-vex: #ff8a65;
+      --c-sage: #81c784;
+      --c-echo: #64b5f6;
+      --c-drift: #ce93d8;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* ===== SIDEBAR ===== */
+    #sidebar {
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      width: var(--sidebar-w);
+      background: #13152a;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      z-index: 100;
+      overflow-y: auto;
+    }
+
+    .sidebar-logo {
+      padding: 18px 16px 12px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--border);
+      line-height: 1.3;
+    }
+
+    .sidebar-logo small {
+      display: block;
+      color: var(--text-dim);
+      font-weight: 400;
+      font-size: 11px;
+      margin-top: 2px;
+    }
+
+    nav { flex: 1; padding: 10px 0; }
+
+    nav a {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 16px;
+      color: var(--text-dim);
+      text-decoration: none;
+      font-size: 13px;
+      border-left: 3px solid transparent;
+      transition: all 0.15s;
+    }
+
+    nav a:hover, nav a.active {
+      color: var(--text);
+      background: rgba(91,106,245,0.08);
+      border-left-color: var(--accent);
+    }
+
+    nav a .nav-icon { font-size: 15px; width: 20px; text-align: center; }
+
+    .sidebar-status {
+      padding: 12px 14px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #444;
+      flex-shrink: 0;
+    }
+
+    .status-dot.up { background: var(--accent2); box-shadow: 0 0 5px var(--accent2); }
+    .status-dot.down { background: #e57373; }
+    .status-dot.checking { background: #ffd54f; animation: pulse 1s infinite; }
+
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    .ws-status {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      color: var(--text-dim);
+      padding: 8px 14px;
+      border-top: 1px solid var(--border);
+    }
+
+    /* ===== MAIN CONTENT ===== */
+    #main {
+      margin-left: var(--sidebar-w);
+      flex: 1;
+      padding: 24px;
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+
+    section {
+      margin-bottom: 40px;
+      scroll-margin-top: 20px;
+    }
+
+    .section-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .section-title .badge {
+      font-size: 11px;
+      font-weight: 600;
+      background: var(--accent);
+      color: #fff;
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+
+    /* ===== CARDS ===== */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 12px;
+    }
+
+    /* ===== COMMAND CENTER ===== */
+    .cc-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 7px 14px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+
+    .btn:hover { opacity: 0.85; }
+    .btn:active { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-green { background: #2e7d52; color: #fff; }
+    .btn-red { background: #7f2626; color: #fff; }
+    .btn-orange { background: #8a5200; color: #fff; }
+    .btn-accent { background: var(--accent); color: #fff; }
+    .btn-dim { background: var(--card2); color: var(--text); border: 1px solid var(--border); }
+    .btn-sm { padding: 4px 9px; font-size: 12px; }
+
+    .btn-group { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+
+    /* RCON */
+    .rcon-input-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    input[type="text"], select, textarea {
+      background: #0f1117;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 7px 10px;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input[type="text"]:focus, select:focus, textarea:focus {
+      border-color: var(--accent);
+    }
+
+    .rcon-result {
+      background: #080a10;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-family: monospace;
+      font-size: 12px;
+      color: var(--accent2);
+      min-height: 36px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* Server Info table */
+    .info-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .info-table td { padding: 5px 4px; border-bottom: 1px solid var(--border); }
+    .info-table td:first-child { color: var(--text-dim); width: 45%; }
+    .info-table td:last-child { color: var(--accent2); font-family: monospace; font-size: 11px; }
+
+    /* Agent Quick Controls */
+    .aqc-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .aqc-row:last-child { border-bottom: none; }
+
+    .aqc-name {
+      font-weight: 600;
+      font-size: 13px;
+      width: 50px;
+    }
+
+    /* ===== AGENT CARDS ===== */
+    .agents-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+    }
+
+    .agent-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .agent-card-top {
+      height: 4px;
+    }
+
+    .agent-card-body {
+      padding: 12px;
+      flex: 1;
+    }
+
+    .agent-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .agent-name {
+      font-weight: 700;
+      font-size: 15px;
+      color: #fff;
+    }
+
+    .agent-status-dot {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      background: #444;
+    }
+
+    .agent-status-dot.online {
+      background: var(--accent2);
+      box-shadow: 0 0 6px var(--accent2);
+    }
+
+    .agent-status-dot.offline { background: #e57373; }
+
+    .focus-badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 8px;
+      font-size: 10px;
+      font-weight: 600;
+      background: rgba(91,106,245,0.18);
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+
+    .agent-pos {
+      font-family: monospace;
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-bottom: 6px;
+    }
+
+    .agent-action {
+      font-size: 12px;
+      color: var(--text);
+      margin-bottom: 8px;
+      min-height: 16px;
+      font-style: italic;
+    }
+
+    .bar-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: var(--text-dim);
+      margin-bottom: 2px;
+    }
+
+    .bar-track {
+      height: 5px;
+      background: #0f1117;
+      border-radius: 3px;
+      margin-bottom: 5px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.4s ease;
+    }
+
+    .bar-health { background: #81c784; }
+    .bar-hunger { background: #ffd54f; }
+
+    .agent-biome {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 6px;
+      margin-bottom: 4px;
+    }
+
+    .agent-nearby {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+    }
+
+    .agent-inventory {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+      word-break: break-word;
+    }
+
+    .agent-buttons {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+      padding: 8px 12px;
+      border-top: 1px solid var(--border);
+      background: rgba(0,0,0,0.15);
+    }
+
+    /* ===== WORLD MAP ===== */
+    #world-map-canvas {
+      width: 100%;
+      height: 500px;
+      background: #080a10;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      display: block;
+    }
+
+    .map-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-top: 10px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .legend-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+    }
+
+    /* ===== METRICS ===== */
+    .stat-boxes {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .stat-box {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+    }
+
+    .chart-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+    }
+
+    .chart-card canvas { width: 100% !important; max-height: 220px; }
+
+    /* ===== MEMORIES ===== */
+    .tab-bar {
+      display: flex;
+      gap: 2px;
+      border-bottom: 2px solid var(--border);
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+
+    .tab-btn {
+      padding: 7px 14px;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      color: var(--text-dim);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .tab-btn:hover { color: var(--text); }
+
+    .tab-btn.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    .memory-summary {
+      background: var(--card2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 12px;
+      margin-bottom: 10px;
+      color: var(--accent2);
+      font-family: monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .goal-box {
+      background: rgba(91,106,245,0.08);
+      border: 1px solid rgba(91,106,245,0.2);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 12px;
+      margin-bottom: 10px;
+      color: var(--text);
+    }
+
+    .convo-turns {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 380px;
+      overflow-y: auto;
+    }
+
+    .turn {
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .turn-role {
+      font-weight: 700;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 3px;
+    }
+
+    .turn.system { background: rgba(255,213,79,0.06); border-left: 3px solid #ffd54f; }
+    .turn.system .turn-role { color: #ffd54f; }
+    .turn.assistant { background: rgba(91,106,245,0.08); border-left: 3px solid var(--accent); }
+    .turn.assistant .turn-role { color: var(--accent); }
+    .turn.user { background: rgba(0,200,160,0.06); border-left: 3px solid var(--accent2); }
+    .turn.user .turn-role { color: var(--accent2); }
+
+    .chroma-controls {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    .chroma-results { display: flex; flex-direction: column; gap: 8px; }
+
+    .chroma-result-item {
+      background: var(--card2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+    }
+
+    .chroma-result-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-bottom: 4px;
+    }
+
+    .chroma-result-text {
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    /* ===== LOGS ===== */
+    .log-controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+
+    .log-box {
+      height: 500px;
+      overflow-y: auto;
+      background: #080a10;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      font-family: monospace;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .log-line { word-break: break-all; }
+    .log-error { color: #e57373; }
+    .log-warn { color: #ffd54f; }
+    .log-success { color: var(--accent2); }
+    .log-command { color: #64b5f6; }
+    .log-info { color: #8890b0; }
+
+    .log-filter {
+      flex: 1;
+      min-width: 150px;
+      max-width: 300px;
+    }
+
+    /* ===== REMOTE ACCESS ===== */
+    .remote-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+    }
+
+    .remote-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .remote-item:last-child { border-bottom: none; }
+
+    .remote-key { color: var(--text-dim); font-size: 12px; }
+    .remote-val { color: var(--accent2); font-family: monospace; font-size: 12px; }
+
+    .code-block {
+      background: #080a10;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-family: monospace;
+      font-size: 12px;
+      color: var(--accent2);
+      margin-top: 8px;
+      white-space: pre;
+      overflow-x: auto;
+    }
+
+    /* ===== RESPONSIVE ===== */
+    @media (max-width: 1200px) {
+      .agents-grid { grid-template-columns: repeat(3, 1fr); }
+      .stat-boxes { grid-template-columns: repeat(3, 1fr); }
+    }
+
+    @media (max-width: 900px) {
+      #sidebar {
+        width: 52px;
+        overflow: hidden;
+      }
+      .sidebar-logo small, nav a span.nav-text, .sidebar-status .status-pill span { display: none; }
+      nav a { padding: 12px; justify-content: center; }
+      #main { margin-left: 52px; }
+      .cc-grid, .charts-grid, .remote-grid { grid-template-columns: 1fr; }
+      .agents-grid { grid-template-columns: repeat(2, 1fr); }
+      .stat-boxes { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 600px) {
+      .agents-grid { grid-template-columns: 1fr; }
+      .stat-boxes { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    /* Loading state */
+    .loading { color: var(--text-dim); font-style: italic; font-size: 12px; }
+
+    /* Notification toast */
+    #toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: var(--card2);
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      padding: 10px 16px;
+      font-size: 13px;
+      color: var(--text);
+      z-index: 999;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.25s;
+      pointer-events: none;
+    }
+
+    #toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  </style>
 </head>
 <body>
-  <h1>Dashboard Loading...</h1>
-  <script>
-    const ws = new WebSocket(`ws://${location.host}`);
-    ws.onopen = () => document.querySelector('h1').textContent = 'Dashboard Connected';
-    ws.onmessage = e => console.log('msg', JSON.parse(e.data));
-  </script>
+
+<!-- ===== SIDEBAR ===== -->
+<aside id="sidebar">
+  <div class="sidebar-logo">
+    MC AI Dashboard
+    <small>Minecraft AI Sim</small>
+  </div>
+  <nav id="sidenav">
+    <a href="#command-center" class="active">
+      <span class="nav-icon">&#9881;</span>
+      <span class="nav-text">Command Center</span>
+    </a>
+    <a href="#agents">
+      <span class="nav-icon">&#129302;</span>
+      <span class="nav-text">Agents</span>
+    </a>
+    <a href="#world-map">
+      <span class="nav-icon">&#127760;</span>
+      <span class="nav-text">World Map</span>
+    </a>
+    <a href="#metrics">
+      <span class="nav-icon">&#128200;</span>
+      <span class="nav-text">Metrics</span>
+    </a>
+    <a href="#memories">
+      <span class="nav-icon">&#129504;</span>
+      <span class="nav-text">Memories</span>
+    </a>
+    <a href="#logs">
+      <span class="nav-icon">&#128196;</span>
+      <span class="nav-text">Live Logs</span>
+    </a>
+    <a href="#remote">
+      <span class="nav-icon">&#128279;</span>
+      <span class="nav-text">Remote Access</span>
+    </a>
+  </nav>
+
+  <div class="sidebar-status">
+    <div class="status-pill">
+      <div class="status-dot checking" id="mc-dot"></div>
+      <span id="mc-label">MC Server</span>
+    </div>
+    <div class="status-pill">
+      <div class="status-dot checking" id="chroma-dot"></div>
+      <span id="chroma-label">ChromaDB</span>
+    </div>
+    <div class="status-pill">
+      <div class="status-dot" id="mind-dot"></div>
+      <span id="mind-label">MindServer</span>
+    </div>
+  </div>
+  <div class="ws-status">
+    <div class="status-dot" id="ws-dot"></div>
+    <span id="ws-label">Disconnected</span>
+  </div>
+</aside>
+
+<!-- ===== MAIN ===== -->
+<main id="main">
+
+  <!-- SECTION 1: Command Center -->
+  <section id="command-center">
+    <div class="section-title">
+      &#9881; Command Center
+    </div>
+    <div class="cc-grid">
+
+      <!-- Stack Control -->
+      <div class="card">
+        <div class="card-title">Stack Control</div>
+        <div class="btn-group">
+          <button class="btn btn-green" onclick="stackControl('start')">&#9654; Start All</button>
+          <button class="btn btn-red" onclick="stackControl('stop')">&#9632; Stop All</button>
+          <button class="btn btn-orange" onclick="stackControl('restart')">&#8635; Restart</button>
+        </div>
+        <div id="stack-result" class="rcon-result" style="margin-top:10px; min-height:28px;"></div>
+      </div>
+
+      <!-- RCON Console -->
+      <div class="card">
+        <div class="card-title">RCON Console</div>
+        <div class="rcon-input-row">
+          <input type="text" id="rcon-input" placeholder="say Hello / list / time set day ..." style="flex:1" />
+          <button class="btn btn-accent" onclick="sendRcon()">Send</button>
+        </div>
+        <div id="rcon-result" class="rcon-result">(no output yet)</div>
+      </div>
+
+      <!-- Server Info -->
+      <div class="card">
+        <div class="card-title">Server Info</div>
+        <table class="info-table">
+          <tr><td>Minecraft</td><td>10.0.0.10:25565</td></tr>
+          <tr><td>Ollama DGX</td><td>10.0.0.69:11434</td></tr>
+          <tr><td>ChromaDB</td><td>10.0.0.10:8000</td></tr>
+          <tr><td>MindServer</td><td>10.0.0.10:8080</td></tr>
+          <tr><td>Dashboard</td><td>10.0.0.10:4000</td></tr>
+        </table>
+      </div>
+
+      <!-- Agent Quick Controls -->
+      <div class="card">
+        <div class="card-title">Agent Quick Controls</div>
+        <div id="aqc-list">
+          <!-- filled by JS -->
+        </div>
+      </div>
+
+    </div><!-- /cc-grid -->
+  </section>
+
+  <!-- SECTION 2: Live Agents -->
+  <section id="agents">
+    <div class="section-title">&#129302; Live Agents</div>
+    <div class="agents-grid" id="agents-grid">
+      <!-- filled by JS -->
+    </div>
+  </section>
+
+  <!-- SECTION 3: World Map -->
+  <section id="world-map">
+    <div class="section-title">&#127760; World Map <span class="badge" id="map-refresh-badge">refreshing</span></div>
+    <canvas id="world-map-canvas"></canvas>
+    <div class="map-legend" id="map-legend"></div>
+  </section>
+
+  <!-- SECTION 4: Metrics -->
+  <section id="metrics">
+    <div class="section-title">&#128200; Metrics</div>
+    <div class="stat-boxes">
+      <div class="stat-box">
+        <div class="stat-value" id="stat-llm-calls">0</div>
+        <div class="stat-label">Total LLM Calls</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value" id="stat-avg-ms">0</div>
+        <div class="stat-label">Avg Response Time (ms)</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value" id="stat-cmds">0</div>
+        <div class="stat-label">Commands Run</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value" id="stat-online">0</div>
+        <div class="stat-label">Agents Online</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value" id="stat-cmd-types">0</div>
+        <div class="stat-label">Command Types</div>
+      </div>
+    </div>
+    <div class="charts-grid">
+      <div class="chart-card">
+        <div class="card-title">LLM Response Time per Agent (last 10)</div>
+        <canvas id="chart-response-time"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="card-title">Commands Issued per Agent</div>
+        <canvas id="chart-cmds-agent"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="card-title">Total API Calls per Agent</div>
+        <canvas id="chart-api-calls"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="card-title">Command Type Distribution (top 10)</div>
+        <canvas id="chart-cmd-types"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 5: Memories -->
+  <section id="memories">
+    <div class="section-title">&#129504; Memories</div>
+    <div class="tab-bar" id="mem-tab-bar">
+      <button class="tab-btn active" onclick="switchMemTab('Rook', this)">Rook</button>
+      <button class="tab-btn" onclick="switchMemTab('Vex', this)">Vex</button>
+      <button class="tab-btn" onclick="switchMemTab('Sage', this)">Sage</button>
+      <button class="tab-btn" onclick="switchMemTab('Echo', this)">Echo</button>
+      <button class="tab-btn" onclick="switchMemTab('Drift', this)">Drift</button>
+      <button class="tab-btn" onclick="switchMemTab('chromadb', this)">ChromaDB Search</button>
+    </div>
+
+    <!-- Agent memory tabs -->
+    <div id="mem-agent-panel">
+      <div style="display:flex; gap:8px; margin-bottom:10px;">
+        <button class="btn btn-dim btn-sm" onclick="loadMemory(currentMemAgent)">&#8635; Refresh</button>
+        <span id="mem-loading" class="loading"></span>
+      </div>
+      <div class="memory-summary" id="mem-summary">—</div>
+      <div class="goal-box" id="mem-goal">No goal loaded.</div>
+      <div class="convo-turns" id="mem-convo"></div>
+    </div>
+
+    <!-- ChromaDB search tab -->
+    <div id="mem-chroma-panel" style="display:none;">
+      <div class="chroma-controls">
+        <select id="chroma-collection" style="min-width:160px;">
+          <option value="rook_memory">rook_memory</option>
+          <option value="vex_memory">vex_memory</option>
+          <option value="sage_memory">sage_memory</option>
+          <option value="echo_memory">echo_memory</option>
+          <option value="drift_memory">drift_memory</option>
+        </select>
+        <input type="text" id="chroma-query" placeholder="Search memories..." style="flex:1; min-width:180px;" />
+        <button class="btn btn-accent" onclick="chromaSearch()">Search</button>
+        <span id="chroma-loading" class="loading"></span>
+      </div>
+      <div id="chroma-results" class="chroma-results"></div>
+    </div>
+  </section>
+
+  <!-- SECTION 6: Live Logs -->
+  <section id="logs">
+    <div class="section-title">&#128196; Live Logs</div>
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchLogTab('mindcraft', this)">MindCraft Log</button>
+      <button class="tab-btn" onclick="switchLogTab('minecraft', this)">Minecraft Server</button>
+    </div>
+    <div class="log-controls">
+      <input type="text" class="log-filter" id="log-filter" placeholder="Filter lines..." oninput="applyLogFilter()" />
+      <button class="btn btn-dim btn-sm" id="autoscroll-btn" onclick="toggleAutoScroll()">&#8659; Auto-scroll ON</button>
+      <button class="btn btn-dim btn-sm" onclick="clearLogs()">Clear</button>
+      <span id="log-line-count" style="font-size:11px; color:var(--text-dim);"></span>
+    </div>
+    <div class="log-box" id="log-box"></div>
+  </section>
+
+  <!-- SECTION 7: Remote Access -->
+  <section id="remote">
+    <div class="section-title">&#128279; Remote Access</div>
+    <div class="remote-grid">
+
+      <div class="card">
+        <div class="card-title">RDP (Linux Desktop)</div>
+        <div class="remote-item">
+          <span class="remote-key">Host</span>
+          <span class="remote-val">10.0.0.10</span>
+        </div>
+        <div class="remote-item">
+          <span class="remote-key">Port</span>
+          <span class="remote-val">3389</span>
+        </div>
+        <div class="remote-item">
+          <span class="remote-key">User</span>
+          <span class="remote-val">myroproductions</span>
+        </div>
+        <p style="font-size:12px; color:var(--text-dim); margin-top:10px;">
+          Requires <code>xrdp</code> installed on Linux Desktop.<br>
+          Recommended iPad app: <strong>Microsoft Remote Desktop</strong>.
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Tailscale &amp; SSH</div>
+        <div class="remote-item">
+          <span class="remote-key">Dashboard (Tailscale)</span>
+          <span class="remote-val">100.85.249.61:4000</span>
+        </div>
+        <div class="remote-item">
+          <span class="remote-key">Mac Mini IP</span>
+          <span class="remote-val">10.0.0.223</span>
+        </div>
+        <div class="code-block">ssh myroproductions@10.0.0.10   # Linux Desktop
+ssh nmyers@10.0.0.69           # My DGX Spark</div>
+      </div>
+
+    </div>
+  </section>
+
+</main>
+
+<!-- Toast notification -->
+<div id="toast"></div>
+
+<!-- ===== SCRIPTS ===== -->
+<script>
+// =====================================================================
+//  CONSTANTS
+// =====================================================================
+const AGENTS = ['Rook', 'Vex', 'Sage', 'Echo', 'Drift'];
+
+const AGENT_COLORS = {
+  Rook: '#e57373',
+  Vex:  '#ff8a65',
+  Sage: '#81c784',
+  Echo: '#64b5f6',
+  Drift:'#ce93d8',
+};
+
+const AGENT_FOCUS = {
+  Rook:  'builder',
+  Vex:   'fighter',
+  Sage:  'engineer',
+  Echo:  'diplomat',
+  Drift: 'explorer',
+};
+
+// =====================================================================
+//  STATE
+// =====================================================================
+let agentData = {};          // keyed by agent name
+let metricsData = {};        // from /api/metrics
+let currentMemAgent = 'Rook';
+let currentLogTab = 'mindcraft';
+let autoScroll = true;
+
+const logBuffers = { mindcraft: [], minecraft: [] };
+const MAX_LOG_BUFFER = 500;
+const MAX_LOG_DOM = 300;
+
+// =====================================================================
+//  TOAST
+// =====================================================================
+function toast(msg, duration = 2500) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), duration);
+}
+
+// =====================================================================
+//  API HELPERS
+// =====================================================================
+async function apiFetch(path, opts = {}) {
+  const res = await fetch(path, opts);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || res.statusText);
+  }
+  return res.json();
+}
+
+// =====================================================================
+//  WEBSOCKET
+// =====================================================================
+let ws = null;
+let wsReconnectTimer = null;
+
+function connectWs() {
+  if (ws && ws.readyState === WebSocket.CONNECTING) return;
+  ws = new WebSocket(`ws://${location.host}`);
+
+  ws.onopen = () => {
+    setWsDot(true);
+    if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
+  };
+
+  ws.onclose = () => {
+    setWsDot(false);
+    wsReconnectTimer = setTimeout(connectWs, 3000);
+  };
+
+  ws.onerror = () => {
+    ws.close();
+  };
+
+  ws.onmessage = (e) => {
+    let msg;
+    try { msg = JSON.parse(e.data); } catch { return; }
+    handleWsMessage(msg);
+  };
+}
+
+function setWsDot(connected) {
+  const dot = document.getElementById('ws-dot');
+  const lbl = document.getElementById('ws-label');
+  dot.className = 'status-dot ' + (connected ? 'up' : 'down');
+  lbl.textContent = connected ? 'Live' : 'Disconnected';
+}
+
+function handleWsMessage({ type, data }) {
+  switch (type) {
+    case 'agent-states':
+      handleAgentStates(data);
+      break;
+    case 'agents-status':
+      setStatusDot('mind', 'up', 'MindServer');
+      break;
+    case 'metric-update':
+      handleMetricUpdate(data);
+      break;
+    case 'log-line':
+      appendLog(data.source, data.line);
+      break;
+  }
+}
+
+// =====================================================================
+//  AGENT STATE
+// =====================================================================
+function handleAgentStates(data) {
+  // data can be object {Rook: {...}, ...} or array [{name:'Rook', ...}, ...]
+  if (Array.isArray(data)) {
+    data.forEach(a => { agentData[a.name] = a; });
+  } else if (data && typeof data === 'object') {
+    Object.assign(agentData, data);
+  }
+  renderAgentCards();
+  drawMap();
+  updateOnlineCount();
+}
+
+function updateOnlineCount() {
+  let count = 0;
+  AGENTS.forEach(n => { if (agentData[n] && agentData[n].online) count++; });
+  document.getElementById('stat-online').textContent = count;
+}
+
+// =====================================================================
+//  AGENT CARDS
+// =====================================================================
+function buildAgentCards() {
+  const grid = document.getElementById('agents-grid');
+  const aqc = document.getElementById('aqc-list');
+  grid.innerHTML = '';
+  aqc.innerHTML = '';
+
+  AGENTS.forEach(name => {
+    // Agent card
+    const card = document.createElement('div');
+    card.className = 'agent-card';
+    card.id = `agent-card-${name}`;
+    card.innerHTML = agentCardHtml(name, null);
+    grid.appendChild(card);
+
+    // AQC row
+    const row = document.createElement('div');
+    row.className = 'aqc-row';
+    row.innerHTML = `
+      <span class="aqc-name" style="color:${AGENT_COLORS[name]}">${name}</span>
+      <div style="display:flex;gap:5px;">
+        <button class="btn btn-green btn-sm" onclick="agentAction('${name}','start')">&#9654;</button>
+        <button class="btn btn-orange btn-sm" onclick="agentAction('${name}','restart')">&#8635;</button>
+        <button class="btn btn-red btn-sm" onclick="agentAction('${name}','stop')">&#9632;</button>
+      </div>
+    `;
+    aqc.appendChild(row);
+  });
+}
+
+function agentCardHtml(name, state) {
+  const color = AGENT_COLORS[name];
+  const focus = AGENT_FOCUS[name];
+  const online = state && state.online;
+
+  const hp = state ? Math.max(0, Math.min(100, (state.health || 0) / 20 * 100)) : 0;
+  const hunger = state ? Math.max(0, Math.min(100, (state.foodLevel || state.hunger || 0) / 20 * 100)) : 0;
+
+  const pos = state && state.position
+    ? `X:${Math.round(state.position.x)} Y:${Math.round(state.position.y)} Z:${Math.round(state.position.z)}`
+    : 'X:— Y:— Z:—';
+
+  const action = state && state.action ? state.action : (online ? 'idle' : 'offline');
+  const biome = state && state.biome ? state.biome : '—';
+  const nearby = state && state.nearbyPlayers && state.nearbyPlayers.length
+    ? state.nearbyPlayers.join(', ')
+    : 'none';
+
+  const inv = state && state.inventory && state.inventory.length
+    ? state.inventory.slice(0, 6).map(i => `${i.name}x${i.count}`).join(', ')
+    : '—';
+
+  return `
+    <div class="agent-card-top" style="background:${color};"></div>
+    <div class="agent-card-body">
+      <div class="agent-header">
+        <span class="agent-name">${name}</span>
+        <span class="agent-status-dot ${online ? 'online' : 'offline'}"></span>
+      </div>
+      <div class="focus-badge">${focus}</div>
+      <div class="agent-pos">${pos}</div>
+      <div class="agent-action">${action}</div>
+      <div class="bar-label"><span>HP</span><span>${state ? (state.health || 0).toFixed(0) + '/20' : '—'}</span></div>
+      <div class="bar-track"><div class="bar-fill bar-health" style="width:${hp}%"></div></div>
+      <div class="bar-label"><span>Hunger</span><span>${state ? (state.foodLevel || state.hunger || 0).toFixed(0) + '/20' : '—'}</span></div>
+      <div class="bar-track"><div class="bar-fill bar-hunger" style="width:${hunger}%"></div></div>
+      <div class="agent-inventory">Inv: ${inv}</div>
+      <div class="agent-biome">Biome: ${biome}</div>
+      <div class="agent-nearby">Nearby: ${nearby}</div>
+    </div>
+    <div class="agent-buttons">
+      <button class="btn btn-orange btn-sm" onclick="agentAction('${name}','restart')">&#8635;</button>
+      <button class="btn btn-red btn-sm" onclick="agentAction('${name}','stop')">&#9632;</button>
+      <button class="btn btn-dim btn-sm" onclick="switchMemTab('${name}', null); document.getElementById('memories').scrollIntoView({behavior:'smooth'})">&#129504;</button>
+    </div>
+  `;
+}
+
+function renderAgentCards() {
+  AGENTS.forEach(name => {
+    const card = document.getElementById(`agent-card-${name}`);
+    if (card) card.innerHTML = agentCardHtml(name, agentData[name] || null);
+  });
+}
+
+// =====================================================================
+//  AGENT ACTIONS
+// =====================================================================
+async function agentAction(name, action) {
+  try {
+    await apiFetch(`/api/agents/${name}/${action}`, { method: 'POST' });
+    toast(`${name}: ${action} sent`);
+  } catch (e) {
+    toast(`Error: ${e.message}`);
+  }
+}
+
+// =====================================================================
+//  STACK CONTROL
+// =====================================================================
+async function stackControl(action) {
+  const el = document.getElementById('stack-result');
+  el.textContent = `Sending ${action}...`;
+  try {
+    const r = await apiFetch(`/api/control/${action}`, { method: 'POST' });
+    el.textContent = r.stdout || r.stderr || 'Done';
+  } catch (e) {
+    el.textContent = 'Error: ' + e.message;
+  }
+}
+
+// =====================================================================
+//  RCON
+// =====================================================================
+async function sendRcon() {
+  const input = document.getElementById('rcon-input');
+  const result = document.getElementById('rcon-result');
+  const cmd = input.value.trim();
+  if (!cmd) return;
+  result.textContent = 'Sending...';
+  try {
+    const r = await apiFetch('/api/rcon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: cmd }),
+    });
+    result.textContent = r.result || '(no output)';
+    input.value = '';
+  } catch (e) {
+    result.textContent = 'Error: ' + e.message;
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const rconInput = document.getElementById('rcon-input');
+  if (rconInput) {
+    rconInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') sendRcon();
+    });
+  }
+});
+
+// =====================================================================
+//  WORLD MAP
+// =====================================================================
+const mapPadding = 60;
+
+function drawMap() {
+  const canvas = document.getElementById('world-map-canvas');
+  const ctx = canvas.getContext('2d');
+
+  // Resize canvas to match display size
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width || canvas.offsetWidth || 800;
+  canvas.height = 500;
+
+  const W = canvas.width;
+  const H = canvas.height;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  ctx.fillStyle = '#080a10';
+  ctx.fillRect(0, 0, W, H);
+
+  // Collect visible agent positions
+  const positions = AGENTS
+    .filter(n => agentData[n] && agentData[n].position)
+    .map(n => ({ name: n, ...agentData[n].position, color: AGENT_COLORS[n] }));
+
+  // Compute bounds
+  let minX, maxX, minZ, maxZ;
+  if (positions.length === 0) {
+    minX = -100; maxX = 100; minZ = -100; maxZ = 100;
+  } else {
+    minX = Math.min(...positions.map(p => p.x));
+    maxX = Math.max(...positions.map(p => p.x));
+    minZ = Math.min(...positions.map(p => p.z));
+    maxZ = Math.max(...positions.map(p => p.z));
+  }
+
+  // Add padding to bounds
+  const spanX = Math.max(200, maxX - minX + 100);
+  const spanZ = Math.max(200, maxZ - minZ + 100);
+  const cx = (minX + maxX) / 2;
+  const cz = (minZ + maxZ) / 2;
+
+  const scaleX = (W - mapPadding * 2) / spanX;
+  const scaleZ = (H - mapPadding * 2) / spanZ;
+  const scale = Math.min(scaleX, scaleZ);
+
+  const toScreenX = (wx) => W / 2 + (wx - cx) * scale;
+  const toScreenZ = (wz) => H / 2 + (wz - cz) * scale;
+
+  // Grid lines
+  ctx.strokeStyle = '#1a1e30';
+  ctx.lineWidth = 1;
+  const gridStep = pickGridStep(spanX, spanZ);
+
+  const gridX0 = Math.ceil((cx - spanX / 2) / gridStep) * gridStep;
+  const gridZ0 = Math.ceil((cz - spanZ / 2) / gridStep) * gridStep;
+
+  for (let gx = gridX0; gx <= cx + spanX / 2; gx += gridStep) {
+    const sx = toScreenX(gx);
+    ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, H);
+    ctx.stroke();
+    ctx.fillStyle = '#3a3f60';
+    ctx.font = '10px monospace';
+    ctx.fillText(gx.toFixed(0), sx + 2, 12);
+  }
+
+  for (let gz = gridZ0; gz <= cz + spanZ / 2; gz += gridStep) {
+    const sz = toScreenZ(gz);
+    ctx.beginPath(); ctx.moveTo(0, sz); ctx.lineTo(W, sz);
+    ctx.stroke();
+    ctx.fillStyle = '#3a3f60';
+    ctx.font = '10px monospace';
+    ctx.fillText(gz.toFixed(0), 2, sz - 2);
+  }
+
+  // Origin crosshair
+  if (cx - spanX / 2 < 0 && cx + spanX / 2 > 0) {
+    const ox = toScreenX(0);
+    ctx.strokeStyle = '#2e3250';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(ox, 0); ctx.lineTo(ox, H); ctx.stroke();
+  }
+  if (cz - spanZ / 2 < 0 && cz + spanZ / 2 > 0) {
+    const oz = toScreenZ(0);
+    ctx.strokeStyle = '#2e3250';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(0, oz); ctx.lineTo(W, oz); ctx.stroke();
+  }
+
+  // Agent dots
+  positions.forEach(p => {
+    const sx = toScreenX(p.x);
+    const sz = toScreenZ(p.z);
+
+    // Glow
+    const grad = ctx.createRadialGradient(sx, sz, 2, sx, sz, 18);
+    grad.addColorStop(0, p.color + 'cc');
+    grad.addColorStop(1, p.color + '00');
+    ctx.beginPath();
+    ctx.arc(sx, sz, 18, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Dot
+    ctx.beginPath();
+    ctx.arc(sx, sz, 7, 0, Math.PI * 2);
+    ctx.fillStyle = p.color;
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Label
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.name, sx, sz - 12);
+    ctx.textAlign = 'left';
+  });
+
+  // Legend
+  updateMapLegend(positions);
+}
+
+function pickGridStep(spanX, spanZ) {
+  const span = Math.max(spanX, spanZ);
+  if (span < 100) return 10;
+  if (span < 500) return 50;
+  if (span < 2000) return 200;
+  if (span < 10000) return 1000;
+  return 5000;
+}
+
+function updateMapLegend(positions) {
+  const legend = document.getElementById('map-legend');
+  legend.innerHTML = AGENTS.map(name => {
+    const p = agentData[name];
+    const pos = p && p.position
+      ? `X:${Math.round(p.position.x)} Y:${Math.round(p.position.y)} Z:${Math.round(p.position.z)}`
+      : 'offline';
+    return `<div class="legend-item">
+      <div class="legend-dot" style="background:${AGENT_COLORS[name]}"></div>
+      <strong style="color:${AGENT_COLORS[name]}">${name}</strong>
+      <span>${pos}</span>
+    </div>`;
+  }).join('');
+}
+
+// =====================================================================
+//  METRICS
+// =====================================================================
+let charts = {};
+
+function initCharts() {
+  const agentLabels = AGENTS;
+  const agentBgColors = AGENTS.map(n => AGENT_COLORS[n] + 'cc');
+  const agentBorderColors = AGENTS.map(n => AGENT_COLORS[n]);
+
+  const commonOpts = {
+    responsive: true,
+    maintainAspectRatio: true,
+    animation: { duration: 300 },
+    plugins: { legend: { labels: { color: '#8890b0', boxWidth: 10, font: { size: 11 } } } },
+    scales: {
+      x: { ticks: { color: '#6b7099', font: { size: 10 } }, grid: { color: '#1e2130' } },
+      y: { ticks: { color: '#6b7099', font: { size: 10 } }, grid: { color: '#1e2130' }, beginAtZero: true },
+    },
+  };
+
+  // Chart 1: response time per agent (line)
+  charts.responseTime = new Chart(document.getElementById('chart-response-time'), {
+    type: 'line',
+    data: {
+      labels: Array.from({ length: 10 }, (_, i) => i + 1),
+      datasets: AGENTS.map(n => ({
+        label: n,
+        data: Array(10).fill(null),
+        borderColor: AGENT_COLORS[n],
+        backgroundColor: AGENT_COLORS[n] + '33',
+        tension: 0.3,
+        pointRadius: 3,
+        borderWidth: 2,
+      })),
+    },
+    options: { ...commonOpts },
+  });
+
+  // Chart 2: commands per agent (bar)
+  charts.cmdsAgent = new Chart(document.getElementById('chart-cmds-agent'), {
+    type: 'bar',
+    data: {
+      labels: agentLabels,
+      datasets: [{ label: 'Commands', data: AGENTS.map(() => 0), backgroundColor: agentBgColors, borderColor: agentBorderColors, borderWidth: 1 }],
+    },
+    options: { ...commonOpts, plugins: { legend: { display: false } } },
+  });
+
+  // Chart 3: API calls per agent (bar)
+  charts.apiCalls = new Chart(document.getElementById('chart-api-calls'), {
+    type: 'bar',
+    data: {
+      labels: agentLabels,
+      datasets: [{ label: 'API Calls', data: AGENTS.map(() => 0), backgroundColor: agentBgColors, borderColor: agentBorderColors, borderWidth: 1 }],
+    },
+    options: { ...commonOpts, plugins: { legend: { display: false } } },
+  });
+
+  // Chart 4: command type doughnut
+  charts.cmdTypes = new Chart(document.getElementById('chart-cmd-types'), {
+    type: 'doughnut',
+    data: {
+      labels: [],
+      datasets: [{ data: [], backgroundColor: [
+        '#5b6af5','#00c8a0','#e57373','#ff8a65','#81c784',
+        '#64b5f6','#ce93d8','#ffd54f','#80cbc4','#bcaaa4',
+      ] }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: { legend: { position: 'right', labels: { color: '#8890b0', boxWidth: 10, font: { size: 11 } } } },
+    },
+  });
+}
+
+function updateChartsFromMetrics(m) {
+  if (!m || !charts.responseTime) return;
+
+  // Response time per agent
+  if (m.responseTimes) {
+    AGENTS.forEach((n, i) => {
+      const times = (m.responseTimes[n] || []).slice(-10);
+      charts.responseTime.data.datasets[i].data = [
+        ...Array(10 - times.length).fill(null),
+        ...times,
+      ];
+    });
+    charts.responseTime.update('none');
+  }
+
+  // Commands per agent
+  if (m.commandsPerAgent) {
+    charts.cmdsAgent.data.datasets[0].data = AGENTS.map(n => m.commandsPerAgent[n] || 0);
+    charts.cmdsAgent.update('none');
+  }
+
+  // API calls per agent
+  if (m.apiCallsPerAgent || m.llmCallsPerAgent) {
+    const src = m.apiCallsPerAgent || m.llmCallsPerAgent;
+    charts.apiCalls.data.datasets[0].data = AGENTS.map(n => src[n] || 0);
+    charts.apiCalls.update('none');
+  }
+
+  // Command types
+  if (m.commandTypes) {
+    const entries = Object.entries(m.commandTypes)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10);
+    charts.cmdTypes.data.labels = entries.map(e => e[0]);
+    charts.cmdTypes.data.datasets[0].data = entries.map(e => e[1]);
+    charts.cmdTypes.update('none');
+  }
+
+  // Stat boxes
+  document.getElementById('stat-llm-calls').textContent = m.totalLlmCalls ?? m.totalApiCalls ?? 0;
+  document.getElementById('stat-avg-ms').textContent = m.avgResponseMs != null ? Math.round(m.avgResponseMs) : 0;
+  document.getElementById('stat-cmds').textContent = m.totalCommands ?? 0;
+  document.getElementById('stat-cmd-types').textContent = m.commandTypes ? Object.keys(m.commandTypes).length : 0;
+}
+
+function handleMetricUpdate(data) {
+  // Merge partial update into metricsData
+  if (data && typeof data === 'object') {
+    // Handle a single metric event (e.g., one LLM call data point)
+    if (data.agent && data.responseMs != null) {
+      if (!metricsData.responseTimes) metricsData.responseTimes = {};
+      if (!metricsData.responseTimes[data.agent]) metricsData.responseTimes[data.agent] = [];
+      metricsData.responseTimes[data.agent].push(data.responseMs);
+    }
+    if (data.agent && data.command) {
+      if (!metricsData.commandsPerAgent) metricsData.commandsPerAgent = {};
+      metricsData.commandsPerAgent[data.agent] = (metricsData.commandsPerAgent[data.agent] || 0) + 1;
+      if (!metricsData.commandTypes) metricsData.commandTypes = {};
+      metricsData.commandTypes[data.command] = (metricsData.commandTypes[data.command] || 0) + 1;
+    }
+    // Also accept full metrics snapshot
+    if (data.totalLlmCalls != null || data.totalApiCalls != null) {
+      Object.assign(metricsData, data);
+    }
+  }
+  updateChartsFromMetrics(metricsData);
+}
+
+async function loadMetrics() {
+  try {
+    const m = await apiFetch('/api/metrics');
+    Object.assign(metricsData, m);
+    updateChartsFromMetrics(metricsData);
+  } catch (_) {}
+}
+
+// =====================================================================
+//  MEMORIES
+// =====================================================================
+function switchMemTab(name, btn) {
+  // Update tab button active state
+  document.querySelectorAll('#mem-tab-bar .tab-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  else {
+    // Find and activate by text
+    document.querySelectorAll('#mem-tab-bar .tab-btn').forEach(b => {
+      if (b.textContent.trim() === name || (name === 'chromadb' && b.textContent.includes('ChromaDB'))) {
+        b.classList.add('active');
+      }
+    });
+  }
+
+  const agentPanel = document.getElementById('mem-agent-panel');
+  const chromaPanel = document.getElementById('mem-chroma-panel');
+
+  if (name === 'chromadb') {
+    agentPanel.style.display = 'none';
+    chromaPanel.style.display = 'block';
+  } else {
+    agentPanel.style.display = 'block';
+    chromaPanel.style.display = 'none';
+    currentMemAgent = name;
+    loadMemory(name);
+  }
+}
+
+async function loadMemory(agent) {
+  const loading = document.getElementById('mem-loading');
+  const summary = document.getElementById('mem-summary');
+  const goal = document.getElementById('mem-goal');
+  const convo = document.getElementById('mem-convo');
+
+  loading.textContent = 'Loading...';
+  summary.textContent = '—';
+  goal.textContent = 'Loading...';
+  convo.innerHTML = '';
+
+  try {
+    const m = await apiFetch(`/api/memories/${agent}`);
+    loading.textContent = '';
+
+    summary.textContent = m.memory_summary || m.summary || '(no summary)';
+    goal.textContent = m.self_prompt || m.goal || '(no goal set)';
+
+    const turns = m.turns || m.messages || m.conversation || [];
+    convo.innerHTML = turns.map(t => {
+      const role = t.role || 'user';
+      const content = typeof t.content === 'string'
+        ? t.content
+        : JSON.stringify(t.content, null, 2);
+      return `<div class="turn ${role}">
+        <div class="turn-role">${role}</div>
+        <div>${escHtml(content)}</div>
+      </div>`;
+    }).join('');
+
+    if (turns.length === 0) convo.innerHTML = '<div class="loading">No conversation turns.</div>';
+  } catch (e) {
+    loading.textContent = '';
+    summary.textContent = 'Error: ' + e.message;
+    goal.textContent = '—';
+    convo.innerHTML = '';
+  }
+}
+
+async function chromaSearch() {
+  const collection = document.getElementById('chroma-collection').value;
+  const query = document.getElementById('chroma-query').value.trim();
+  const loading = document.getElementById('chroma-loading');
+  const results = document.getElementById('chroma-results');
+
+  if (!query) { toast('Enter a search query'); return; }
+
+  loading.textContent = 'Searching...';
+  results.innerHTML = '';
+
+  try {
+    const r = await apiFetch('/api/chromadb/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ collection, query, n: 10 }),
+    });
+
+    loading.textContent = '';
+
+    // ChromaDB v2 returns { ids, documents, distances, metadatas }
+    const docs = r.documents?.[0] || [];
+    const distances = r.distances?.[0] || [];
+    const ids = r.ids?.[0] || [];
+
+    if (docs.length === 0) {
+      results.innerHTML = '<div class="loading">No results found.</div>';
+      return;
+    }
+
+    results.innerHTML = docs.map((doc, i) => `
+      <div class="chroma-result-item">
+        <div class="chroma-result-meta">
+          <span>Result ${i + 1} — ID: ${ids[i] || '—'}</span>
+          <span>Distance: ${distances[i] != null ? distances[i].toFixed(4) : '—'}</span>
+        </div>
+        <div class="chroma-result-text">${escHtml(doc || '')}</div>
+      </div>
+    `).join('');
+  } catch (e) {
+    loading.textContent = '';
+    results.innerHTML = `<div class="loading">Error: ${escHtml(e.message)}</div>`;
+  }
+}
+
+// =====================================================================
+//  LOGS
+// =====================================================================
+function switchLogTab(tab, btn) {
+  currentLogTab = tab;
+  document.querySelectorAll('.tab-bar .tab-btn').forEach(b => {
+    if (['MindCraft Log', 'Minecraft Server'].some(t => b.textContent.includes(t.split(' ')[0]))) {
+      b.classList.remove('active');
+    }
+  });
+  if (btn) btn.classList.add('active');
+  renderLogBox();
+}
+
+function appendLog(source, line) {
+  const buf = logBuffers[source] || [];
+  buf.push(line);
+  if (buf.length > MAX_LOG_BUFFER) buf.splice(0, buf.length - MAX_LOG_BUFFER);
+  logBuffers[source] = buf;
+
+  if (source === currentLogTab) {
+    renderLogLine(line);
+  }
+}
+
+function renderLogLine(line) {
+  const box = document.getElementById('log-box');
+  const filter = document.getElementById('log-filter').value.toLowerCase();
+
+  if (filter && !line.toLowerCase().includes(filter)) return;
+
+  // Keep DOM under limit
+  if (box.children.length >= MAX_LOG_DOM) {
+    box.removeChild(box.firstChild);
+  }
+
+  const el = document.createElement('div');
+  el.className = 'log-line ' + classifyLogLine(line);
+  el.textContent = line;
+  box.appendChild(el);
+
+  if (autoScroll) box.scrollTop = box.scrollHeight;
+  updateLogCount();
+}
+
+function renderLogBox() {
+  const box = document.getElementById('log-box');
+  box.innerHTML = '';
+  const buf = logBuffers[currentLogTab] || [];
+  const filter = document.getElementById('log-filter').value.toLowerCase();
+  const lines = filter ? buf.filter(l => l.toLowerCase().includes(filter)) : buf;
+  const visible = lines.slice(-MAX_LOG_DOM);
+  visible.forEach(line => {
+    const el = document.createElement('div');
+    el.className = 'log-line ' + classifyLogLine(line);
+    el.textContent = line;
+    box.appendChild(el);
+  });
+  if (autoScroll) box.scrollTop = box.scrollHeight;
+  updateLogCount();
+}
+
+function classifyLogLine(line) {
+  const l = line.toLowerCase();
+  if (l.includes('error') || l.includes('err ') || l.includes('[error]')) return 'log-error';
+  if (l.includes('warn') || l.includes('[warn]')) return 'log-warn';
+  if (l.includes('response') || l.includes('success') || l.includes('[info] done')) return 'log-success';
+  if (l.includes('command') || l.includes('cmd') || l.includes('action')) return 'log-command';
+  return 'log-info';
+}
+
+function applyLogFilter() {
+  renderLogBox();
+}
+
+function toggleAutoScroll() {
+  autoScroll = !autoScroll;
+  const btn = document.getElementById('autoscroll-btn');
+  btn.textContent = autoScroll ? '↓ Auto-scroll ON' : '↓ Auto-scroll OFF';
+  if (autoScroll) {
+    const box = document.getElementById('log-box');
+    box.scrollTop = box.scrollHeight;
+  }
+}
+
+function clearLogs() {
+  logBuffers[currentLogTab] = [];
+  document.getElementById('log-box').innerHTML = '';
+  updateLogCount();
+}
+
+function updateLogCount() {
+  const buf = logBuffers[currentLogTab] || [];
+  document.getElementById('log-line-count').textContent = buf.length + ' lines';
+}
+
+// =====================================================================
+//  STATUS CHECKS
+// =====================================================================
+function setStatusDot(id, state, label) {
+  const dot = document.getElementById(`${id}-dot`);
+  const lbl = document.getElementById(`${id}-label`);
+  if (dot) { dot.className = 'status-dot ' + state; }
+  if (lbl && label) lbl.textContent = label;
+}
+
+async function checkStatuses() {
+  // MC Server via RCON list
+  try {
+    const r = await apiFetch('/api/rcon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: 'list' }),
+    });
+    setStatusDot('mc', r.result ? 'up' : 'down', 'MC Server');
+  } catch (_) {
+    setStatusDot('mc', 'down', 'MC Server');
+  }
+
+  // ChromaDB
+  try {
+    await apiFetch('/api/chromadb/collections');
+    setStatusDot('chroma', 'up', 'ChromaDB');
+  } catch (_) {
+    setStatusDot('chroma', 'down', 'ChromaDB');
+  }
+}
+
+// =====================================================================
+//  SIDEBAR ACTIVE STATE ON SCROLL
+// =====================================================================
+function initScrollSpy() {
+  const sections = document.querySelectorAll('section[id]');
+  const navLinks = document.querySelectorAll('#sidenav a');
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        navLinks.forEach(a => a.classList.remove('active'));
+        const active = document.querySelector(`#sidenav a[href="#${entry.target.id}"]`);
+        if (active) active.classList.add('active');
+      }
+    });
+  }, { threshold: 0.2, rootMargin: '-10% 0px -60% 0px' });
+
+  sections.forEach(s => observer.observe(s));
+}
+
+// =====================================================================
+//  UTILITY
+// =====================================================================
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// =====================================================================
+//  INITIAL LOAD
+// =====================================================================
+async function init() {
+  buildAgentCards();
+  drawMap();
+  initCharts();
+
+  // Load initial data
+  try {
+    const agentRes = await apiFetch('/api/agents');
+    if (agentRes.agents) handleAgentStates(agentRes.agents);
+  } catch (_) {}
+
+  await loadMetrics();
+  await loadMemory('Rook');
+
+  connectWs();
+  checkStatuses();
+
+  // Auto-check statuses every 15s
+  setInterval(checkStatuses, 15000);
+
+  // Redraw map every 2s
+  setInterval(drawMap, 2000);
+
+  initScrollSpy();
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
 </body>
 </html>
