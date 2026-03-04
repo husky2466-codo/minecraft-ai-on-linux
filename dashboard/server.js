@@ -4,6 +4,8 @@ import { createServer } from 'http';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { startMindServerBridge, agentStates, agentList, onAgentUpdate } from './src/mindserver-bridge.js';
+import { tailLog } from './src/log-streamer.js';
+import { parseMindcraftLine, metrics } from './src/metrics-engine.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -37,6 +39,21 @@ onAgentUpdate((type, data) => broadcast(type, data));
 
 // REST endpoint for current agent state snapshot
 app.get('/api/agents', (req, res) => res.json({ agents: agentStates, list: agentList }));
+
+// Tail mindcraft log — parse for metrics and stream to clients
+tailLog('/home/myroproductions/mindcraft.log', (line) => {
+  const parsed = parseMindcraftLine(line);
+  if (parsed) broadcast('metric-update', parsed);
+  broadcast('log-line', { source: 'mindcraft', line });
+});
+
+// Tail minecraft server log
+tailLog('/home/myroproductions/minecraft-server/server.log', (line) => {
+  broadcast('log-line', { source: 'minecraft', line });
+});
+
+// Metrics REST endpoint
+app.get('/api/metrics', (req, res) => res.json(metrics));
 
 const PORT = 4000;
 server.listen(PORT, '0.0.0.0', () => {
