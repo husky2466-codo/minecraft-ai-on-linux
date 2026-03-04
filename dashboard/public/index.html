@@ -1192,15 +1192,15 @@ function agentCardHtml(name, state) {
         <span class="agent-status-dot ${online ? 'online' : 'offline'}"></span>
       </div>
       <div class="focus-badge">${focus}</div>
-      <div class="agent-pos">${pos}</div>
-      <div class="agent-action">${action}</div>
+      <div class="agent-pos">${escHtml(pos)}</div>
+      <div class="agent-action">${escHtml(action)}</div>
       <div class="bar-label"><span>HP</span><span>${state ? (state.health || 0).toFixed(0) + '/20' : '—'}</span></div>
       <div class="bar-track"><div class="bar-fill bar-health" style="width:${hp}%"></div></div>
       <div class="bar-label"><span>Hunger</span><span>${state ? (state.foodLevel || state.hunger || 0).toFixed(0) + '/20' : '—'}</span></div>
       <div class="bar-track"><div class="bar-fill bar-hunger" style="width:${hunger}%"></div></div>
-      <div class="agent-inventory">Inv: ${inv}</div>
-      <div class="agent-biome">Biome: ${biome}</div>
-      <div class="agent-nearby">Nearby: ${nearby}</div>
+      <div class="agent-inventory">Inv: ${escHtml(inv)}</div>
+      <div class="agent-biome">Biome: ${escHtml(biome)}</div>
+      <div class="agent-nearby">Nearby: ${escHtml(nearby)}</div>
     </div>
     <div class="agent-buttons">
       <button class="btn btn-orange btn-sm" onclick="agentAction('${name}','restart')">&#8635;</button>
@@ -1420,7 +1420,7 @@ function updateMapLegend(positions) {
     return `<div class="legend-item">
       <div class="legend-dot" style="background:${AGENT_COLORS[name]}"></div>
       <strong style="color:${AGENT_COLORS[name]}">${name}</strong>
-      <span>${pos}</span>
+      <span>${escHtml(pos)}</span>
     </div>`;
   }).join('');
 }
@@ -1555,6 +1555,7 @@ function handleMetricUpdate(data) {
       if (!metricsData.responseTimes) metricsData.responseTimes = {};
       if (!metricsData.responseTimes[data.agent]) metricsData.responseTimes[data.agent] = [];
       metricsData.responseTimes[data.agent].push(data.responseMs);
+      if (metricsData.responseTimes[data.agent].length > 100) metricsData.responseTimes[data.agent].shift();
     }
     if (data.agent && data.command) {
       if (!metricsData.commandsPerAgent) metricsData.commandsPerAgent = {};
@@ -1632,8 +1633,8 @@ async function loadMemory(agent) {
       const content = typeof t.content === 'string'
         ? t.content
         : JSON.stringify(t.content, null, 2);
-      return `<div class="turn ${role}">
-        <div class="turn-role">${role}</div>
+      return `<div class="turn ${escHtml(role)}">
+        <div class="turn-role">${escHtml(role)}</div>
         <div>${escHtml(content)}</div>
       </div>`;
     }).join('');
@@ -1697,11 +1698,7 @@ async function chromaSearch() {
 // =====================================================================
 function switchLogTab(tab, btn) {
   currentLogTab = tab;
-  document.querySelectorAll('.tab-bar .tab-btn').forEach(b => {
-    if (['MindCraft Log', 'Minecraft Server'].some(t => b.textContent.includes(t.split(' ')[0]))) {
-      b.classList.remove('active');
-    }
-  });
+  document.querySelectorAll('#logs .tab-bar .tab-btn').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
   renderLogBox();
 }
