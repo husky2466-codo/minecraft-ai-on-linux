@@ -1505,56 +1505,78 @@ function initCharts() {
 function updateChartsFromMetrics(m) {
   if (!m || !charts.responseTime) return;
 
-  // Response time per agent
+  // Response time per agent — entries may be {ts,ms} objects or raw numbers
   if (m.responseTimes) {
     AGENTS.forEach((n, i) => {
-      const times = (m.responseTimes[n] || []).slice(-10);
+      const raw = (m.responseTimes[n] || []).slice(-10);
+      const times = raw.map(e => (e && typeof e === 'object') ? e.ms : e);
       charts.responseTime.data.datasets[i].data = [
-        ...Array(10 - times.length).fill(null),
+        ...Array(Math.max(0, 10 - times.length)).fill(null),
         ...times,
       ];
     });
     charts.responseTime.update('none');
   }
 
-  // Commands per agent
-  if (m.commandsPerAgent) {
-    charts.cmdsAgent.data.datasets[0].data = AGENTS.map(n => m.commandsPerAgent[n] || 0);
-    charts.cmdsAgent.update('none');
+  // Commands per agent — commandCounts is nested {agent:{cmd:N}}, sum per agent
+  const commandsPerAgent = m.commandsPerAgent || {};
+  if (m.commandCounts) {
+    AGENTS.forEach(n => {
+      commandsPerAgent[n] = Object.values(m.commandCounts[n] || {}).reduce((a, b) => a + b, 0);
+    });
   }
+  charts.cmdsAgent.data.datasets[0].data = AGENTS.map(n => commandsPerAgent[n] || 0);
+  charts.cmdsAgent.update('none');
 
-  // API calls per agent
-  if (m.apiCallsPerAgent || m.llmCallsPerAgent) {
-    const src = m.apiCallsPerAgent || m.llmCallsPerAgent;
-    charts.apiCalls.data.datasets[0].data = AGENTS.map(n => src[n] || 0);
-    charts.apiCalls.update('none');
-  }
+  // API calls per agent — use totalCalls from backend
+  const callsPerAgent = m.apiCallsPerAgent || m.llmCallsPerAgent || m.totalCalls || {};
+  charts.apiCalls.data.datasets[0].data = AGENTS.map(n => callsPerAgent[n] || 0);
+  charts.apiCalls.update('none');
 
-  // Command types
-  if (m.commandTypes) {
-    const entries = Object.entries(m.commandTypes)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10);
-    charts.cmdTypes.data.labels = entries.map(e => e[0]);
-    charts.cmdTypes.data.datasets[0].data = entries.map(e => e[1]);
+  // Command types — flatten commandCounts across all agents
+  const commandTypes = m.commandTypes || (() => {
+    const flat = {};
+    if (m.commandCounts) {
+      AGENTS.forEach(n => {
+        Object.entries(m.commandCounts[n] || {}).forEach(([cmd, cnt]) => {
+          flat[cmd] = (flat[cmd] || 0) + cnt;
+        });
+      });
+    }
+    return flat;
+  })();
+  const typeEntries = Object.entries(commandTypes).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  if (typeEntries.length > 0) {
+    charts.cmdTypes.data.labels = typeEntries.map(e => e[0]);
+    charts.cmdTypes.data.datasets[0].data = typeEntries.map(e => e[1]);
     charts.cmdTypes.update('none');
   }
 
-  // Stat boxes
-  document.getElementById('stat-llm-calls').textContent = m.totalLlmCalls ?? m.totalApiCalls ?? 0;
-  document.getElementById('stat-avg-ms').textContent = m.avgResponseMs != null ? Math.round(m.avgResponseMs) : 0;
-  document.getElementById('stat-cmds').textContent = m.totalCommands ?? 0;
-  document.getElementById('stat-cmd-types').textContent = m.commandTypes ? Object.keys(m.commandTypes).length : 0;
+  // Stat boxes — compute totals from raw API fields
+  const totalCalls = m.totalCalls
+    ? Object.values(m.totalCalls).reduce((a, b) => a + b, 0)
+    : (m.totalLlmCalls ?? m.totalApiCalls ?? 0);
+  const allTimes = m.responseTimes
+    ? Object.values(m.responseTimes).flat().map(e => (e && typeof e === 'object') ? e.ms : e)
+    : [];
+  const avgMs = allTimes.length > 0 ? Math.round(allTimes.reduce((a, b) => a + b, 0) / allTimes.length) : 0;
+  const totalCmds = m.commandCounts
+    ? AGENTS.reduce((a, n) => a + Object.values(m.commandCounts[n] || {}).reduce((x, y) => x + y, 0), 0)
+    : (m.totalCommands ?? 0);
+  document.getElementById('stat-llm-calls').textContent = totalCalls;
+  document.getElementById('stat-avg-ms').textContent = avgMs;
+  document.getElementById('stat-cmds').textContent = totalCmds;
+  document.getElementById('stat-cmd-types').textContent = Object.keys(commandTypes).length;
 }
 
 function handleMetricUpdate(data) {
   // Merge partial update into metricsData
   if (data && typeof data === 'object') {
     // Handle a single metric event (e.g., one LLM call data point)
-    if (data.agent && data.responseMs != null) {
+    if (data.agent && (data.ms != null || data.responseMs != null)) {
       if (!metricsData.responseTimes) metricsData.responseTimes = {};
       if (!metricsData.responseTimes[data.agent]) metricsData.responseTimes[data.agent] = [];
-      metricsData.responseTimes[data.agent].push(data.responseMs);
+      metricsData.responseTimes[data.agent].push({ ts: Date.now(), ms: data.ms ?? data.responseMs });
       if (metricsData.responseTimes[data.agent].length > 100) metricsData.responseTimes[data.agent].shift();
     }
     if (data.agent && data.command) {
@@ -1870,6 +1892,9 @@ async function init() {
 
   // Auto-check statuses every 15s
   setInterval(checkStatuses, 15000);
+
+  // Poll metrics every 5s (charts update from API snapshot)
+  setInterval(loadMetrics, 5000);
 
   // Redraw map every 2s
   setInterval(drawMap, 2000);
