@@ -1091,6 +1091,14 @@ function handleWsMessage({ type, data }) {
       break;
     case 'agents-status':
       setStatusDot('mind', 'up', 'MindServer');
+      if (Array.isArray(data)) {
+        data.forEach(a => {
+          if (!agentData[a.name]) agentData[a.name] = {};
+          agentData[a.name].online = a.in_game || a.socket_connected;
+        });
+        renderAgentCards();
+        updateOnlineCount();
+      }
       break;
     case 'metric-update':
       handleMetricUpdate(data);
