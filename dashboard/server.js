@@ -4,8 +4,10 @@ import { createServer } from 'http';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { startMindServerBridge, agentStates, agentList, onAgentUpdate } from './src/mindserver-bridge.js';
-import { tailLog } from './src/log-streamer.js';
+import { tailLog, readRemoteFile, runRemoteCommand } from './src/log-streamer.js';
 import { parseMindcraftLine, metrics } from './src/metrics-engine.js';
+import { sendRcon } from './src/rcon-client.js';
+import { sendCommand } from './src/mindserver-bridge.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -14,6 +16,9 @@ const wss = new WebSocketServer({ server });
 
 app.use(express.json());
 app.use(express.static(join(__dirname, 'public')));
+
+const AGENTS = ['Rook', 'Vex', 'Sage', 'Echo', 'Drift'];
+const MINDCRAFT_PATH = '/home/myroproductions/Projects/minecraft-ai-on-linux/mindcraft';
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
@@ -54,6 +59,101 @@ tailLog('/home/myroproductions/minecraft-server/server.log', (line) => {
 
 // Metrics REST endpoint
 app.get('/api/metrics', (req, res) => res.json(metrics));
+
+// --- Agent memory files ---
+app.get('/api/memories/:agent', async (req, res) => {
+  const { agent } = req.params;
+  if (!AGENTS.includes(agent)) return res.status(404).json({ error: 'Unknown agent' });
+  try {
+    const content = await readRemoteFile(`${MINDCRAFT_PATH}/bots/${agent}/memory.json`);
+    res.json(JSON.parse(content));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// --- ChromaDB proxy (v2 API) ---
+const CHROMA = 'http://10.0.0.10:8000/api/v2';
+
+app.get('/api/chromadb/collections', async (req, res) => {
+  try {
+    const r = await fetch(`${CHROMA}/collections`);
+    res.json(await r.json());
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/chromadb/search', async (req, res) => {
+  const { collection, query, n = 10 } = req.body;
+  if (!collection || !query) return res.status(400).json({ error: 'collection and query required' });
+  try {
+    const r = await fetch(`${CHROMA}/collections/${collection}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query_texts: [query], n_results: n }),
+    });
+    res.json(await r.json());
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/chromadb/get/:collection', async (req, res) => {
+  try {
+    const r = await fetch(`${CHROMA}/collections/${req.params.collection}/get`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 50 }),
+    });
+    res.json(await r.json());
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// --- RCON ---
+app.post('/api/rcon', async (req, res) => {
+  const { command } = req.body;
+  if (!command) return res.status(400).json({ error: 'command required' });
+  try {
+    const result = await sendRcon(command);
+    res.json({ result: result || '(no output)' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// --- Stack control ---
+const PROJECT = '/home/myroproductions/Projects/minecraft-ai-on-linux';
+
+const STACK_COMMANDS = {
+  start: `cd ${PROJECT} && bash pipeline/start_stack.sh && PATH=$HOME/.nvm/versions/node/v22.22.0/bin:$HOME/.local/bin:$PATH nohup node mindcraft/main.js > ~/mindcraft.log 2>&1 &`,
+  stop: `cd ${PROJECT} && bash pipeline/stop_stack.sh`,
+  restart: `cd ${PROJECT} && bash pipeline/stop_stack.sh; sleep 5; bash pipeline/start_stack.sh && PATH=$HOME/.nvm/versions/node/v22.22.0/bin:$HOME/.local/bin:$PATH nohup node mindcraft/main.js > ~/mindcraft.log 2>&1 &`,
+};
+
+app.post('/api/control/:action', async (req, res) => {
+  const { action } = req.params;
+  if (!STACK_COMMANDS[action]) return res.status(400).json({ error: 'Unknown action. Use: start, stop, restart' });
+  try {
+    const { stdout, stderr } = await runRemoteCommand(STACK_COMMANDS[action]);
+    res.json({ ok: true, stdout, stderr });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// --- Agent control via MindServer ---
+const VALID_AGENT_ACTIONS = ['restart', 'stop', 'start'];
+
+app.post('/api/agents/:name/:action', (req, res) => {
+  const { name, action } = req.params;
+  if (!AGENTS.includes(name)) return res.status(404).json({ error: 'Unknown agent' });
+  if (!VALID_AGENT_ACTIONS.includes(action)) return res.status(400).json({ error: 'Invalid action. Use: restart, stop, start' });
+  sendCommand(`${action}-agent`, name);
+  res.json({ ok: true, agent: name, action });
+});
 
 const PORT = 4000;
 server.listen(PORT, '0.0.0.0', () => {
