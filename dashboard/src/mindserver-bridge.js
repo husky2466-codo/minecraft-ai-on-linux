@@ -7,9 +7,10 @@ let _socket = null;
 export function sendCommand(event, ...args) {
   if (_socket?.connected) {
     _socket.emit(event, ...args);
-  } else {
-    console.warn('[MindServer] Cannot send command — not connected');
+    return true;
   }
+  console.warn('[MindServer] Cannot send command — not connected');
+  return false;
 }
 
 // agentStates: { AgentName: fullStateObject }

@@ -2,12 +2,18 @@ import { Rcon } from 'rcon-client';
 
 const rcon = new Rcon({ host: '10.0.0.10', port: 25575, password: 'ailab743915' });
 let connected = false;
+let connectPromise = null;
 
 async function ensureConnected() {
   if (!connected) {
-    await rcon.connect();
-    connected = true;
-    rcon.socket.on('close', () => { connected = false; });
+    if (!connectPromise) {
+      connectPromise = rcon.connect().then(() => {
+        connected = true;
+        connectPromise = null;
+        rcon.socket.on('close', () => { connected = false; });
+      });
+    }
+    await connectPromise;
   }
 }
 

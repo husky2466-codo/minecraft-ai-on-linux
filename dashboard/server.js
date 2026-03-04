@@ -19,6 +19,7 @@ app.use(express.static(join(__dirname, 'public')));
 
 const AGENTS = ['Rook', 'Vex', 'Sage', 'Echo', 'Drift'];
 const MINDCRAFT_PATH = '/home/myroproductions/Projects/minecraft-ai-on-linux/mindcraft';
+const CHROMA_COLLECTIONS = ['rook_memory', 'vex_memory', 'sage_memory', 'echo_memory', 'drift_memory'];
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
@@ -87,6 +88,7 @@ app.get('/api/chromadb/collections', async (req, res) => {
 app.post('/api/chromadb/search', async (req, res) => {
   const { collection, query, n = 10 } = req.body;
   if (!collection || !query) return res.status(400).json({ error: 'collection and query required' });
+  if (!CHROMA_COLLECTIONS.includes(collection)) return res.status(400).json({ error: 'Unknown collection' });
   try {
     const r = await fetch(`${CHROMA}/collections/${collection}/query`, {
       method: 'POST',
@@ -100,6 +102,7 @@ app.post('/api/chromadb/search', async (req, res) => {
 });
 
 app.post('/api/chromadb/get/:collection', async (req, res) => {
+  if (!CHROMA_COLLECTIONS.includes(req.params.collection)) return res.status(404).json({ error: 'Unknown collection' });
   try {
     const r = await fetch(`${CHROMA}/collections/${req.params.collection}/get`, {
       method: 'POST',
@@ -151,7 +154,8 @@ app.post('/api/agents/:name/:action', (req, res) => {
   const { name, action } = req.params;
   if (!AGENTS.includes(name)) return res.status(404).json({ error: 'Unknown agent' });
   if (!VALID_AGENT_ACTIONS.includes(action)) return res.status(400).json({ error: 'Invalid action. Use: restart, stop, start' });
-  sendCommand(`${action}-agent`, name);
+  const sent = sendCommand(`${action}-agent`, name);
+  if (!sent) return res.status(503).json({ error: 'MindServer not connected' });
   res.json({ ok: true, agent: name, action });
 });
 
