@@ -1,0 +1,3 @@
+[submodule "mindcraft"]
+	path = mindcraft
+	url = https://github.com/husky2466-codo/mindcraft.git
