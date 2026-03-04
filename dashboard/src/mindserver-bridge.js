@@ -2,14 +2,24 @@ import { io } from 'socket.io-client';
 
 const MINDSERVER_URL = 'http://10.0.0.10:8080';
 
+let _socket = null;
+
+export function sendCommand(event, ...args) {
+  if (_socket?.connected) {
+    _socket.emit(event, ...args);
+  } else {
+    console.warn('[MindServer] Cannot send command — not connected');
+  }
+}
+
 // agentStates: { AgentName: fullStateObject }
 export const agentStates = {};
 export const agentList = [];
 
-let onUpdateCallback = null;
+const updateListeners = [];
 
 export function onAgentUpdate(cb) {
-  onUpdateCallback = cb;
+  updateListeners.push(cb);
 }
 
 export function startMindServerBridge() {
@@ -17,6 +27,7 @@ export function startMindServerBridge() {
     reconnection: true,
     reconnectionDelay: 3000,
   });
+  _socket = socket;
 
   socket.on('connect', () => {
     console.log('[MindServer] Connected to', MINDSERVER_URL);
@@ -28,9 +39,10 @@ export function startMindServerBridge() {
   });
 
   socket.on('agents-status', (agents) => {
+    // Clear in-place to preserve the exported array reference
     agentList.length = 0;
     agents.forEach(a => agentList.push(a));
-    if (onUpdateCallback) onUpdateCallback('agents-status', agents);
+    updateListeners.forEach(cb => cb('agents-status', agents));
   });
 
   socket.on('state-update', (states) => {
@@ -39,7 +51,7 @@ export function startMindServerBridge() {
     arr.forEach(state => {
       if (state?.name) agentStates[state.name] = state;
     });
-    if (onUpdateCallback) onUpdateCallback('agent-states', agentStates);
+    updateListeners.forEach(cb => cb('agent-states', agentStates));
   });
 
   socket.on('connect_error', (err) => {
