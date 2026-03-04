@@ -1,0 +1,3 @@
+#!/bin/bash
+mkdir -p ~/chromadb/data
+~/.local/bin/chroma run --host 0.0.0.0 --port 8000 --path ~/chromadb/data
