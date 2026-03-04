@@ -992,7 +992,7 @@ ssh nmyers@10.0.0.69           # My DGX Spark</div>
 // =====================================================================
 //  CONSTANTS
 // =====================================================================
-const AGENTS = ['Rook', 'Vex', 'Sage', 'Echo', 'Drift'];
+let AGENTS = []; // populated dynamically from agents-status events
 
 const AGENT_COLORS = {
   Rook: '#e57373',
@@ -1009,6 +1009,39 @@ const AGENT_FOCUS = {
   Echo:  'diplomat',
   Drift: 'explorer',
 };
+
+// Fallback palette for agents not in the hardcoded maps
+const AGENT_COLOR_PALETTE = ['#e57373','#ff8a65','#81c784','#64b5f6','#ce93d8','#fff176','#80deea','#ffcc80'];
+function agentColor(name) {
+  return agentColor(name) || AGENT_COLOR_PALETTE[AGENTS.indexOf(name) % AGENT_COLOR_PALETTE.length] || '#8890b0';
+}
+function agentFocus(name) {
+  return AGENT_FOCUS[name] || 'agent';
+}
+
+function syncChartAgents() {
+  if (!charts.responseTime) return;
+  charts.responseTime.data.datasets = AGENTS.map(n => ({
+    label: n,
+    data: Array(10).fill(null),
+    borderColor: agentColor(n),
+    backgroundColor: agentColor(n) + '33',
+    tension: 0.3, pointRadius: 3, borderWidth: 2,
+  }));
+  charts.responseTime.update('none');
+  const bgColors = AGENTS.map(n => agentColor(n) + 'cc');
+  const bdColors = AGENTS.map(n => agentColor(n));
+  charts.cmdsAgent.data.labels = [...AGENTS];
+  charts.cmdsAgent.data.datasets[0].data = AGENTS.map(() => 0);
+  charts.cmdsAgent.data.datasets[0].backgroundColor = bgColors;
+  charts.cmdsAgent.data.datasets[0].borderColor = bdColors;
+  charts.cmdsAgent.update('none');
+  charts.apiCalls.data.labels = [...AGENTS];
+  charts.apiCalls.data.datasets[0].data = AGENTS.map(() => 0);
+  charts.apiCalls.data.datasets[0].backgroundColor = bgColors;
+  charts.apiCalls.data.datasets[0].borderColor = bdColors;
+  charts.apiCalls.update('none');
+}
 
 // =====================================================================
 //  STATE
@@ -1092,11 +1125,20 @@ function handleWsMessage({ type, data }) {
     case 'agents-status':
       setStatusDot('mind', 'up', 'MindServer');
       if (Array.isArray(data)) {
+        const newNames = data.map(a => a.name);
+        const agentsChanged = JSON.stringify(newNames) !== JSON.stringify(AGENTS);
+        AGENTS = newNames;
         data.forEach(a => {
           if (!agentData[a.name]) agentData[a.name] = {};
           agentData[a.name].online = a.in_game || a.socket_connected;
         });
-        renderAgentCards();
+        if (agentsChanged) {
+          buildAgentCards();
+          syncChartAgents();
+          updateMapLegend();
+        } else {
+          renderAgentCards();
+        }
         updateOnlineCount();
       }
       break;
@@ -1151,7 +1193,7 @@ function buildAgentCards() {
     const row = document.createElement('div');
     row.className = 'aqc-row';
     row.innerHTML = `
-      <span class="aqc-name" style="color:${AGENT_COLORS[name]}">${name}</span>
+      <span class="aqc-name" style="color:${agentColor(name)}">${name}</span>
       <div style="display:flex;gap:5px;">
         <button class="btn btn-green btn-sm" onclick="agentAction('${name}','start')">&#9654;</button>
         <button class="btn btn-orange btn-sm" onclick="agentAction('${name}','restart')">&#8635;</button>
@@ -1163,8 +1205,8 @@ function buildAgentCards() {
 }
 
 function agentCardHtml(name, state) {
-  const color = AGENT_COLORS[name];
-  const focus = AGENT_FOCUS[name];
+  const color = agentColor(name);
+  const focus = agentFocus(name);
   const online = state && state.online;
 
   const hp = state ? Math.max(0, Math.min(100, (state.health || 0) / 20 * 100)) : 0;
@@ -1300,7 +1342,7 @@ function drawMap() {
   // Collect visible agent positions
   const positions = AGENTS
     .filter(n => agentData[n] && agentData[n].position)
-    .map(n => ({ name: n, ...agentData[n].position, color: AGENT_COLORS[n] }));
+    .map(n => ({ name: n, ...agentData[n].position, color: agentColor(n) }));
 
   // Compute bounds
   let minX, maxX, minZ, maxZ;
@@ -1418,8 +1460,8 @@ function updateMapLegend(positions) {
       ? `X:${Math.round(p.position.x)} Y:${Math.round(p.position.y)} Z:${Math.round(p.position.z)}`
       : 'offline';
     return `<div class="legend-item">
-      <div class="legend-dot" style="background:${AGENT_COLORS[name]}"></div>
-      <strong style="color:${AGENT_COLORS[name]}">${name}</strong>
+      <div class="legend-dot" style="background:${agentColor(name)}"></div>
+      <strong style="color:${agentColor(name)}">${name}</strong>
       <span>${escHtml(pos)}</span>
     </div>`;
   }).join('');
@@ -1431,9 +1473,9 @@ function updateMapLegend(positions) {
 let charts = {};
 
 function initCharts() {
-  const agentLabels = AGENTS;
-  const agentBgColors = AGENTS.map(n => AGENT_COLORS[n] + 'cc');
-  const agentBorderColors = AGENTS.map(n => AGENT_COLORS[n]);
+  const agentLabels = [];
+  const agentBgColors = [];
+  const agentBorderColors = [];
 
   const commonOpts = {
     responsive: true,
@@ -1451,15 +1493,7 @@ function initCharts() {
     type: 'line',
     data: {
       labels: Array.from({ length: 10 }, (_, i) => i + 1),
-      datasets: AGENTS.map(n => ({
-        label: n,
-        data: Array(10).fill(null),
-        borderColor: AGENT_COLORS[n],
-        backgroundColor: AGENT_COLORS[n] + '33',
-        tension: 0.3,
-        pointRadius: 3,
-        borderWidth: 2,
-      })),
+      datasets: [], // populated via syncChartAgents when agents-status fires
     },
     options: { ...commonOpts },
   });
@@ -1469,7 +1503,7 @@ function initCharts() {
     type: 'bar',
     data: {
       labels: agentLabels,
-      datasets: [{ label: 'Commands', data: AGENTS.map(() => 0), backgroundColor: agentBgColors, borderColor: agentBorderColors, borderWidth: 1 }],
+      datasets: [{ label: 'Commands', data: [], backgroundColor: [], borderColor: [], borderWidth: 1 }],
     },
     options: { ...commonOpts, plugins: { legend: { display: false } } },
   });
@@ -1479,7 +1513,7 @@ function initCharts() {
     type: 'bar',
     data: {
       labels: agentLabels,
-      datasets: [{ label: 'API Calls', data: AGENTS.map(() => 0), backgroundColor: agentBgColors, borderColor: agentBorderColors, borderWidth: 1 }],
+      datasets: [{ label: 'API Calls', data: [], backgroundColor: [], borderColor: [], borderWidth: 1 }],
     },
     options: { ...commonOpts, plugins: { legend: { display: false } } },
   });
