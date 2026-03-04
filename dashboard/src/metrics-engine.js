@@ -59,5 +59,19 @@ export function parseMindcraftLine(line) {
     return { type: 'command', agent: lastActiveAgent, cmd };
   }
 
+  // Detect action success: "Agent executed: !xxx and got: Action output:"
+  const successMatch = line.match(/Agent executed: (![\w]+) and got: Action output:/);
+  if (successMatch && lastActiveAgent) {
+    metrics.actionResults[lastActiveAgent].success++;
+    return { type: 'action-result', agent: lastActiveAgent, result: 'success' };
+  }
+
+  // Detect action failure: "Could not find", "Failed", action errors
+  const failMatch = line.match(/Could not find|Action failed|cannot|No path found/i);
+  if (failMatch && lastActiveAgent) {
+    metrics.actionResults[lastActiveAgent].fail++;
+    return { type: 'action-result', agent: lastActiveAgent, result: 'fail' };
+  }
+
   return null;
 }
