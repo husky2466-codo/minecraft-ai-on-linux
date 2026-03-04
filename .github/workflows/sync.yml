@@ -15,6 +15,7 @@ jobs:
           cd ~/Projects/minecraft-ai-on-linux
           git fetch origin
           git reset --hard origin/main
+          git submodule update --init --recursive
           echo "Synced on Linux Desktop at $(date)"
 
   sync-dgx:
@@ -26,4 +27,5 @@ jobs:
           cd ~/Projects/minecraft-ai-on-linux
           git fetch origin
           git reset --hard origin/main
+          git submodule update --init --recursive
           echo "Synced on DGX at $(date)"
