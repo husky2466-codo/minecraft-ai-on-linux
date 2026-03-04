@@ -3,6 +3,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { createServer } from 'http';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { startMindServerBridge, agentStates, agentList, onAgentUpdate } from './src/mindserver-bridge.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -28,6 +29,14 @@ wss.on('connection', (ws) => {
   ws.on('close', () => console.log('[WS] Client disconnected'));
   ws.on('error', (err) => console.error('[WS] Client error:', err.message));
 });
+
+// Start MindServer bridge
+const mindServerSocket = startMindServerBridge();
+app.locals.mindServerSocket = mindServerSocket;
+onAgentUpdate((type, data) => broadcast(type, data));
+
+// REST endpoint for current agent state snapshot
+app.get('/api/agents', (req, res) => res.json({ agents: agentStates, list: agentList }));
 
 const PORT = 4000;
 server.listen(PORT, '0.0.0.0', () => {
