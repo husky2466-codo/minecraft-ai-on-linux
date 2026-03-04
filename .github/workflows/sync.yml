@@ -3,34 +3,27 @@ name: Sync to Machines
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
-  notify-sync:
-    runs-on: ubuntu-latest
+  sync-linux-desktop:
+    name: Sync - Linux Desktop
+    runs-on: [self-hosted, linux-desktop]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Pull latest
+        run: |
+          cd ~/Projects/minecraft-ai-on-linux
+          git fetch origin
+          git reset --hard origin/main
+          echo "Synced on Linux Desktop at $(date)"
 
-      - name: Trigger sync on Linux Desktop
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.LINUX_DESKTOP_IP }}
-          username: ${{ secrets.LINUX_DESKTOP_USER }}
-          key: ${{ secrets.LINUX_DESKTOP_SSH_KEY }}
-          script: |
-            cd ~/Projects/minecraft-ai-on-linux
-            git fetch origin
-            git reset --hard origin/main
-            echo "Synced on Linux Desktop at $(date)"
-
-      - name: Trigger sync on DGX
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DGX_IP }}
-          username: ${{ secrets.DGX_USER }}
-          key: ${{ secrets.DGX_SSH_KEY }}
-          script: |
-            cd ~/Projects/minecraft-ai-on-linux
-            git fetch origin
-            git reset --hard origin/main
-            echo "Synced on DGX at $(date)"
+  sync-dgx:
+    name: Sync - My DGX
+    runs-on: [self-hosted, dgx]
+    steps:
+      - name: Pull latest
+        run: |
+          cd ~/Projects/minecraft-ai-on-linux
+          git fetch origin
+          git reset --hard origin/main
+          echo "Synced on DGX at $(date)"
