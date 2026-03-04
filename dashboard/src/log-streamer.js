@@ -1,3 +1,4 @@
+import path from 'path';
 import { Client } from 'ssh2';
 import { readFileSync } from 'fs';
 
@@ -14,10 +15,10 @@ const ALLOWED_REMOTE_PATHS = [
 const MINDCRAFT_BOTS_BASE = '/home/myroproductions/Projects/minecraft-ai-on-linux/mindcraft/bots/';
 
 function validateRemotePath(filePath) {
-  // Allow known log paths
-  if (ALLOWED_REMOTE_PATHS.includes(filePath)) return;
-  // Allow memory.json files under the bots/ directory (safe agent names only)
-  if (filePath.startsWith(MINDCRAFT_BOTS_BASE) && /^[A-Za-z0-9_\-/\.]+$/.test(filePath)) return;
+  // Normalize to resolve any .. sequences before checking
+  const normalized = path.posix.normalize(filePath);
+  if (ALLOWED_REMOTE_PATHS.includes(normalized)) return;
+  if (normalized.startsWith(MINDCRAFT_BOTS_BASE) && /^[A-Za-z0-9_\-\.\/]+$/.test(normalized)) return;
   throw new Error(`Remote path not allowed: ${filePath}`);
 }
 
