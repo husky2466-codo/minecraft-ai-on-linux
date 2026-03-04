@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minecraft AI Sim Dashboard</title>
+</head>
+<body>
+  <h1>Dashboard Loading...</h1>
+  <script>
+    const ws = new WebSocket(`ws://${location.host}`);
+    ws.onopen = () => document.querySelector('h1').textContent = 'Dashboard Connected';
+    ws.onmessage = e => console.log('msg', JSON.parse(e.data));
+  </script>
+</body>
+</html>
