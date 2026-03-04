@@ -9,8 +9,11 @@ async function ensureConnected() {
     if (!connectPromise) {
       connectPromise = rcon.connect().then(() => {
         connected = true;
-        connectPromise = null;
         rcon.socket.on('close', () => { connected = false; });
+      }).catch((err) => {
+        throw err;
+      }).finally(() => {
+        connectPromise = null;
       });
     }
     await connectPromise;
