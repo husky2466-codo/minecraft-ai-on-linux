@@ -22,7 +22,7 @@ const AGENT_ROLES = {
   Rook:  'gatherer — mines resources and fills storage chests',
   Vex:   'combat — guards the base and eliminates threats',
   Drift: 'explorer — maps new terrain and finds biomes/resources',
-  Echo:  'coordinator — tracks agent relationships and shares resources',
+  Echo:  'crafter — smelts ore, cooks food, crafts tools and keeps the team supplied',
   Sage:  'engineer — crafts tools, builds structures, manages inventory',
 };
 
