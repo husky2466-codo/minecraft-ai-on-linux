@@ -15,7 +15,7 @@ const VIEWER_PORT    = 3099;
 const MINDSERVER_URL = 'http://127.0.0.1:8080';
 const VISION_MODEL   = 'qwen2.5vl:7b';
 const REASON_MODEL   = 'qwen2.5:7b';
-const INTERVAL_MS    = parseInt(process.env.NEXUS_INTERVAL_MS || '60000', 10);
+const INTERVAL_MS    = parseInt(process.env.NEXUS_INTERVAL_MS || '30000', 10);
 const MC_LOG         = path.join(process.env.HOME, 'mindcraft.log');
 
 const AGENT_ROLES = {
@@ -521,8 +521,30 @@ if (require.main === module) {
     await startBrowser();
     log('[Init] All systems ready — starting loop');
 
-    setTimeout(runLoop, 5_000);
-    setInterval(runLoop, INTERVAL_MS);
+    // Self-scheduling loop — reads intervalMs from live config on each tick
+    // so the dashboard can change it without restarting the process
+    const CONFIG_FILE = path.join(process.env.HOME, 'nexus-config.json');
+    function readLiveConfig() {
+      try { return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch (_) { return {}; }
+    }
+    function writeLiveConfig(cfg) {
+      try { fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2)); } catch (_) {}
+    }
+    // Write default config if file doesn't exist
+    if (!fs.existsSync(CONFIG_FILE)) {
+      writeLiveConfig({ intervalMs: INTERVAL_MS, visionModel: VISION_MODEL, reasonModel: REASON_MODEL });
+    }
+
+    let _loopTimer = null;
+    function scheduleLoop(delayMs) {
+      if (_loopTimer) clearTimeout(_loopTimer);
+      _loopTimer = setTimeout(async () => {
+        await runLoop();
+        const cfg = readLiveConfig();
+        scheduleLoop(cfg.intervalMs ?? INTERVAL_MS);
+      }, delayMs);
+    }
+    scheduleLoop(5_000); // first tick after 5s
 
     // Graceful shutdown
     async function shutdown(signal) {

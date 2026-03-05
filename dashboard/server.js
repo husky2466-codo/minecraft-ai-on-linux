@@ -315,6 +315,27 @@ app.post('/api/agents/:name/mode', (req, res) => {
   res.json({ ok: true, agent: name, mode, enabled });
 });
 
+// --- Orchestrator config (read/write nexus-config.json on remote) ---
+app.get('/api/orchestrator/config', async (req, res) => {
+  try {
+    const { stdout } = await runRemoteCommand('cat /home/myroproductions/nexus-config.json 2>/dev/null || echo "{}"');
+    res.json(JSON.parse(stdout.trim() || '{}'));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/orchestrator/config', async (req, res) => {
+  const { intervalMs, visionModel, reasonModel } = req.body;
+  const cfg = {};
+  if (intervalMs)   cfg.intervalMs   = parseInt(intervalMs, 10);
+  if (visionModel)  cfg.visionModel  = visionModel.trim();
+  if (reasonModel)  cfg.reasonModel  = reasonModel.trim();
+  try {
+    const escaped = JSON.stringify(JSON.stringify(cfg));
+    await runRemoteCommand(`echo ${escaped} > /home/myroproductions/nexus-config.json`);
+    res.json({ ok: true, cfg });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 const PORT = 4000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Dashboard running at http://0.0.0.0:${PORT}`);
