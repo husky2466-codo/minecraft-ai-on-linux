@@ -389,10 +389,67 @@
     }
 
     .agent-inventory {
-      font-size: 11px;
-      color: var(--text-dim);
       margin-bottom: 8px;
-      word-break: break-word;
+    }
+
+    .inv-section-label {
+      font-size: 10px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 3px;
+      margin-top: 5px;
+    }
+
+    .inv-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 3px;
+      margin-bottom: 2px;
+    }
+
+    .inv-chip {
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 3px;
+      padding: 1px 5px;
+      font-size: 10px;
+      color: var(--text-main);
+      white-space: nowrap;
+    }
+
+    .inv-chip.equip {
+      border-color: rgba(100,180,255,0.3);
+      background: rgba(100,180,255,0.08);
+      color: #7ecfff;
+    }
+
+    .inv-slots-bar {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 3px;
+    }
+
+    .inv-slots-track {
+      flex: 1;
+      height: 3px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .inv-slots-fill {
+      height: 100%;
+      background: #4caf82;
+      border-radius: 2px;
+      transition: width 0.3s;
+    }
+
+    .inv-slots-label {
+      font-size: 10px;
+      color: var(--text-dim);
+      white-space: nowrap;
     }
 
     .agent-buttons {
@@ -1498,10 +1555,25 @@ function agentCardHtml(name, state) {
   const nearbyAll = [...nearbyHumans, ...nearbyBots];
   const nearby = nearbyAll.length ? nearbyAll.join(', ') : 'none';
 
-  const invCounts = state?.inventory?.counts;
-  const inv = invCounts && Object.keys(invCounts).length
-    ? Object.entries(invCounts).slice(0, 6).map(([n, c]) => `${n}x${c}`).join(', ')
-    : '—';
+  // Inventory chips — all items, sorted by count desc
+  const invCounts = state?.inventory?.counts || {};
+  const invEntries = Object.entries(invCounts).sort((a, b) => b[1] - a[1]);
+  const invChipsHtml = invEntries.length
+    ? invEntries.map(([n, c]) => `<span class="inv-chip">${escHtml(n)} <b>${c}</b></span>`).join('')
+    : '<span style="font-size:11px;color:var(--text-dim)">—</span>';
+
+  // Equipment slots
+  const equip = state?.inventory?.equipment || {};
+  const equipSlots = ['mainHand','helmet','chestplate','leggings','boots','offHand'];
+  const equipChipsHtml = equipSlots
+    .filter(slot => equip[slot])
+    .map(slot => `<span class="inv-chip equip">${escHtml(slot)}: ${escHtml(equip[slot])}</span>`)
+    .join('') || '<span style="font-size:11px;color:var(--text-dim)">bare</span>';
+
+  // Slots used bar
+  const slotsUsed = state?.inventory?.stacksUsed ?? 0;
+  const slotsTotal = state?.inventory?.totalSlots ?? 36;
+  const slotsPct = slotsTotal > 0 ? Math.round((slotsUsed / slotsTotal) * 100) : 0;
 
   return `
     <div class="agent-card-top" style="background:${color};"></div>
@@ -1517,7 +1589,16 @@ function agentCardHtml(name, state) {
       <div class="bar-track"><div class="bar-fill bar-health" style="width:${hp}%"></div></div>
       <div class="bar-label"><span>Hunger</span><span>${gp ? (gp.hunger || 0).toFixed(0) + '/20' : '—'}</span></div>
       <div class="bar-track"><div class="bar-fill bar-hunger" style="width:${hunger}%"></div></div>
-      <div class="agent-inventory">Inv: ${escHtml(inv)}</div>
+      <div class="agent-inventory">
+        <div class="inv-section-label">Inventory</div>
+        <div class="inv-chips">${invChipsHtml}</div>
+        <div class="inv-slots-bar">
+          <div class="inv-slots-track"><div class="inv-slots-fill" style="width:${slotsPct}%"></div></div>
+          <span class="inv-slots-label">${slotsUsed}/${slotsTotal} slots</span>
+        </div>
+        <div class="inv-section-label">Equipment</div>
+        <div class="inv-chips">${equipChipsHtml}</div>
+      </div>
       <div class="agent-biome">Biome: ${escHtml(biome)}</div>
       <div class="agent-nearby">Nearby: ${escHtml(nearby)}</div>
     </div>
