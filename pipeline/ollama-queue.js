@@ -133,7 +133,20 @@ const server = http.createServer((req, res) => {
     const isInference = req.method === 'POST' &&
       (req.url === '/api/chat' || req.url === '/api/generate');
 
-    if (isInference) {
+    const json = (data) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); };
+
+    if (req.method === 'GET' && req.url === '/queue/stats') {
+      json({ '7b': queues['7b'].length, '14b': queues['14b'].length, served: totalServed, dropped: totalDropped });
+    } else if (req.method === 'POST' && req.url === '/queue/clear') {
+      const dropped7 = queues['7b'].length;
+      const dropped14 = queues['14b'].length;
+      queues['7b'].forEach(e => { if (!e.res.writableEnded) { e.res.writeHead(200, { 'Content-Type': 'application/json' }); e.res.end(JSON.stringify({ model: e.body.model, response: '\t', done: true })); } });
+      queues['14b'].forEach(e => { if (!e.res.writableEnded) { e.res.writeHead(200, { 'Content-Type': 'application/json' }); e.res.end(JSON.stringify({ model: e.body.model, response: '\t', done: true })); } });
+      queues['7b'] = [];
+      queues['14b'] = [];
+      console.log(`[queue] CLEARED — flushed ${dropped7} 7b + ${dropped14} 14b items`);
+      json({ cleared: { '7b': dropped7, '14b': dropped14 } });
+    } else if (isInference) {
       let body = {};
       try { body = JSON.parse(rawBody); } catch (_) {}
       const family = getFamily(body.model || '');

@@ -1425,7 +1425,28 @@
   <!-- SECTION 3: World Map -->
   <section id="world-map">
     <div class="section-title">&#127760; World Map <span class="badge" id="map-refresh-badge">refreshing</span></div>
-    <canvas id="world-map-canvas"></canvas>
+    <div style="display:flex;gap:12px;align-items:flex-start;">
+      <canvas id="world-map-canvas" style="flex:1;min-width:0;"></canvas>
+      <div id="queue-panel" style="width:160px;flex-shrink:0;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:10px;">
+        <div style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;">Inference Queue</div>
+        <div>
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:3px;">7b model</div>
+          <div id="q-7b" style="font-size:28px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--text);">—</div>
+          <div style="font-size:10px;color:var(--text-dim);" id="q-7b-label">waiting</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:3px;">14b model</div>
+          <div id="q-14b" style="font-size:28px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--text);">—</div>
+          <div style="font-size:10px;color:var(--text-dim);" id="q-14b-label">waiting</div>
+        </div>
+        <div style="border-top:1px solid var(--border);padding-top:8px;display:flex;flex-direction:column;gap:6px;">
+          <div style="font-size:10px;color:var(--text-dim);">Served: <span id="q-served">—</span> &nbsp;|&nbsp; Dropped: <span id="q-dropped">—</span></div>
+          <button onclick="clearQueue('7b')" style="width:100%;padding:5px;font-size:11px;background:#2a1a1a;border:1px solid #7f3333;border-radius:4px;color:#e07070;cursor:pointer;">Clear 7b</button>
+          <button onclick="clearQueue('14b')" style="width:100%;padding:5px;font-size:11px;background:#2a1a1a;border:1px solid #7f3333;border-radius:4px;color:#e07070;cursor:pointer;">Clear 14b</button>
+          <button onclick="clearQueue('all')" style="width:100%;padding:5px;font-size:11px;background:#3a1010;border:1px solid #b03030;border-radius:4px;color:#ff8080;cursor:pointer;font-weight:600;">Clear All</button>
+        </div>
+      </div>
+    </div>
     <div class="map-legend" id="map-legend"></div>
   </section>
 
@@ -2912,7 +2933,39 @@ async function init() {
   setInterval(refreshOrchestratorPanel, 15000);
   setInterval(refreshNexusSnapshot, 30000);
 
+  // Poll queue stats every 5s
+  pollQueueStats();
+  setInterval(pollQueueStats, 5000);
+
   initScrollSpy();
+}
+
+// =====================================================================
+//  QUEUE STATS
+// =====================================================================
+async function pollQueueStats() {
+  try {
+    const d = await fetch('/api/queue/stats').then(r => r.json());
+    const set = (id, val, label) => {
+      const el = document.getElementById(id);
+      if (el) { el.textContent = val; el.style.color = val > 0 ? '#e07070' : 'var(--text)'; }
+      const lEl = document.getElementById(id + '-label');
+      if (lEl) lEl.textContent = label;
+    };
+    set('q-7b',  d['7b'],  d['7b']  === 1 ? 'request' : 'requests');
+    set('q-14b', d['14b'], d['14b'] === 1 ? 'request' : 'requests');
+    const srv = document.getElementById('q-served');  if (srv) srv.textContent = d.served ?? '—';
+    const drp = document.getElementById('q-dropped'); if (drp) drp.textContent = d.dropped ?? '—';
+  } catch (_) {}
+}
+
+async function clearQueue(which) {
+  if (!confirm(`Clear ${which === 'all' ? 'all queues' : which + ' queue'}?`)) return;
+  try {
+    const d = await fetch('/api/queue/clear', { method: 'POST' }).then(r => r.json());
+    console.log('[queue] cleared', d);
+    await pollQueueStats();
+  } catch (e) { alert('Clear failed: ' + e.message); }
 }
 
 // =====================================================================
