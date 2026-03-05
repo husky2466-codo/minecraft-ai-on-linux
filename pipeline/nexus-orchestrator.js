@@ -390,6 +390,8 @@ function sendDirective(agent, message) {
 
 // ── Main loop ─────────────────────────────────────────────────────────────
 let loopWatchdog = null;
+let loopCount = 0;
+const BROWSER_RESTART_EVERY = 30; // restart Chrome every 30 loops (~30 min) to prevent memory leak
 
 async function runLoop() {
   if (loopRunning) {
@@ -402,7 +404,20 @@ async function runLoop() {
     log('[Loop] Watchdog triggered — force-resetting loopRunning after 90s');
     loopRunning = false;
   }, 90_000);
+  loopCount++;
   log('--- Loop tick ---');
+
+  // Periodically restart Chrome to prevent memory accumulation
+  if (loopCount % BROWSER_RESTART_EVERY === 0) {
+    log(`[Browser] Scheduled restart at loop ${loopCount} — freeing memory`);
+    try {
+      if (browser) { await browser.close().catch(() => {}); }
+    } catch (_) {}
+    browser = null;
+    page = null;
+    await startBrowser();
+  }
+
   try {
     const frame = await captureFrame();
     if (frame) {

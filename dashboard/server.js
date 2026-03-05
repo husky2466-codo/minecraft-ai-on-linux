@@ -81,7 +81,13 @@ app.get('/api/orchestrator', async (req, res) => {
       if (!lastTick && lines[i].includes('--- Loop tick ---')) lastTick = lines[i].match(/\[(.+?)\]/)?.[1];
       if (!lastVision && lines[i].includes('[Vision]')) lastVision = lines[i].replace(/.*\[Vision\]\s*/, '');
     }
-    running = lines.some(l => l.includes('[Init] All systems ready'));
+    // Running = a loop tick appeared in the last 5 minutes
+    const fiveMinAgo = Date.now() - 5 * 60 * 1000;
+    running = lines.some(l => {
+      if (!l.includes('--- Loop tick ---')) return false;
+      const m = l.match(/\[(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\]/);
+      return m ? new Date(m[1]).getTime() > fiveMinAgo : false;
+    });
   } catch (_) {}
   res.json({ running, lastTick, lastVision, loopInterval: 60 });
 });
