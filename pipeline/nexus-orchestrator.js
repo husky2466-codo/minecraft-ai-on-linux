@@ -41,6 +41,7 @@ let lastFrame   = null;
 let loopRunning  = false;
 let msSocket     = null;
 let orbitAngle   = 0; // degrees, advances ORBIT_STEP each tick
+let viewerStarted = false;
 
 // ── Logging ───────────────────────────────────────────────────────────────
 function log(msg) {
@@ -134,11 +135,14 @@ function startEyeBot() {
 
   eyeBot.once('spawn', () => {
     log('[EyeBot] NexusEye spawned in world');
-    try {
-      mineflayerViewer(eyeBot, { port: VIEWER_PORT, firstPerson: false });
-      log(`[EyeBot] prismarine-viewer on :${VIEWER_PORT}`);
-    } catch (e) {
-      log(`[EyeBot] Viewer failed to start: ${e.message}`);
+    if (!viewerStarted) {
+      try {
+        mineflayerViewer(eyeBot, { port: VIEWER_PORT, firstPerson: false });
+        log(`[EyeBot] prismarine-viewer on :${VIEWER_PORT}`);
+        viewerStarted = true;
+      } catch (e) {
+        log(`[EyeBot] Viewer failed to start: ${e.message}`);
+      }
     }
     // Set spectator mode so NexusEye floats and is invisible, then teleport up and look down
     setTimeout(async () => {
