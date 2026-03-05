@@ -664,6 +664,49 @@
     .directive-item .d-msg { color: var(--text); }
     .directive-item .d-ts { font-size: 10px; color: var(--text-dim); float: right; }
 
+    /* --- Fixed bottom-left status HUD --- */
+    #nexus-hud {
+      position: fixed;
+      bottom: 16px;
+      left: 16px;
+      z-index: 1000;
+      background: rgba(8,10,18,0.92);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 14px;
+      min-width: 200px;
+      backdrop-filter: blur(6px);
+      font-size: 12px;
+    }
+    #nexus-hud .hud-title {
+      font-size: 10px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+    .hud-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 5px;
+    }
+    .hud-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: #555;
+      transition: background .4s;
+    }
+    .hud-dot.online { background: #69f0ae; box-shadow: 0 0 4px #69f0ae88; }
+    .hud-dot.offline { background: #e57373; }
+    .hud-dot.warn    { background: #fff176; }
+    .hud-label { color: var(--text); flex: 1; }
+    .hud-sublabel { color: var(--text-dim); font-size: 10px; }
+    .hud-btns { display: flex; gap: 5px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+
     .log-box {
       height: 500px;
       overflow-y: auto;
@@ -953,7 +996,14 @@
 
   <!-- SECTION 2b: Orchestrator -->
   <section id="orchestrator">
-    <div class="section-title">&#127972; Orchestrator — Nexus <span class="badge" id="nexus-model-badge">qwen2.5vl:7b + qwen3.5:27b</span></div>
+    <div class="section-title" style="display:flex; justify-content:space-between; align-items:center;">
+      <span>&#127972; Orchestrator — Nexus <span class="badge" id="nexus-model-badge">qwen2.5vl:7b + qwen3.5:27b</span></span>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <span id="nexus-loop-interval" style="font-size:11px; color:var(--text-dim);">60s loop</span>
+        <button class="btn btn-dim btn-sm" onclick="restartOrchestrator()">&#8635; Restart Orchestrator</button>
+        <button class="btn btn-dim btn-sm" onclick="restartVision()">&#8635; Restart Vision</button>
+      </div>
+    </div>
 
     <!-- Status bar -->
     <div class="orch-status-bar">
@@ -1169,6 +1219,35 @@ ssh nmyers@10.0.0.69           # My DGX Spark</div>
 <!-- Toast notification -->
 <div id="toast"></div>
 
+<!-- ===== NEXUS STATUS HUD (bottom-left) ===== -->
+<div id="nexus-hud">
+  <div class="hud-title">Nexus Orchestrator</div>
+  <div class="hud-row">
+    <div class="hud-dot offline" id="hud-orchestrator-dot"></div>
+    <span class="hud-label">Orchestrator</span>
+    <span class="hud-sublabel" id="hud-orchestrator-tick">—</span>
+  </div>
+  <div class="hud-row">
+    <div class="hud-dot offline" id="hud-eyebot-dot"></div>
+    <span class="hud-label">NexusEye</span>
+    <span class="hud-sublabel">spectator</span>
+  </div>
+  <div class="hud-row">
+    <div class="hud-dot offline" id="hud-vision-dot"></div>
+    <span class="hud-label">Vision</span>
+    <span class="hud-sublabel">qwen2.5vl:7b</span>
+  </div>
+  <div class="hud-row">
+    <div class="hud-dot offline" id="hud-reason-dot"></div>
+    <span class="hud-label">Reason</span>
+    <span class="hud-sublabel">qwen3.5:27b</span>
+  </div>
+  <div class="hud-btns">
+    <button class="btn btn-dim btn-sm" onclick="restartOrchestrator()" style="flex:1;">&#8635; Orchestrator</button>
+    <button class="btn btn-dim btn-sm" onclick="restartVision()" style="flex:1;">&#8635; Vision</button>
+  </div>
+</div>
+
 <!-- ===== SCRIPTS ===== -->
 <script>
 // =====================================================================
@@ -1332,6 +1411,7 @@ function handleWsMessage({ type, data }) {
     case 'log-line':
       appendLog(data.source, data.line);
       maybeAppendNexusLog(data.source, data.line);
+      if (data.source === 'nexus') updateHudFromLog(data.line);
       break;
   }
 }
@@ -2365,20 +2445,73 @@ function clearNexusLog() {
 async function refreshOrchestratorPanel() {
   try {
     const d = await apiFetch('/api/orchestrator');
+    const isOnline = d.running;
+
+    // Panel status
     const statusEl = document.getElementById('nexus-status');
     if (statusEl) {
-      statusEl.textContent = d.running ? 'online' : 'offline';
-      statusEl.style.color = d.running ? '#69f0ae' : '#e57373';
+      statusEl.textContent = isOnline ? 'online' : 'offline';
+      statusEl.style.color = isOnline ? '#69f0ae' : '#e57373';
     }
     if (d.lastTick) {
+      const tickStr = new Date(d.lastTick).toLocaleTimeString();
       const el = document.getElementById('nexus-last-tick');
-      if (el) el.textContent = new Date(d.lastTick).toLocaleTimeString();
+      if (el) el.textContent = tickStr;
     }
     if (d.lastVision) {
       const el = document.getElementById('nexus-vision-text');
       if (el) el.textContent = d.lastVision;
     }
-  } catch (_) {}
+
+    // HUD dots
+    setHudDot('hud-orchestrator-dot', isOnline ? 'online' : 'offline');
+    if (d.lastTick) {
+      const tickEl = document.getElementById('hud-orchestrator-tick');
+      if (tickEl) tickEl.textContent = new Date(d.lastTick).toLocaleTimeString();
+    }
+  } catch (_) {
+    setHudDot('hud-orchestrator-dot', 'offline');
+  }
+}
+
+function setHudDot(id, state) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = 'hud-dot ' + state;
+}
+
+// Driven by log-line events — mark vision/reason/eyebot online when their log lines arrive
+let _hudVisionTs = 0, _hudReasonTs = 0, _hudEyebotTs = 0;
+function updateHudFromLog(line) {
+  const now = Date.now();
+  if (line.includes('[Vision]'))    { _hudVisionTs  = now; setHudDot('hud-vision-dot',  'online'); }
+  if (line.includes('[Reason]'))    { _hudReasonTs  = now; setHudDot('hud-reason-dot',  'online'); }
+  if (line.includes('[EyeBot]'))    { _hudEyebotTs  = now; setHudDot('hud-eyebot-dot',  'online'); }
+}
+// Dim dots that haven't fired in > 3 minutes (missed cycles)
+setInterval(() => {
+  const stale = 3 * 60 * 1000;
+  const now = Date.now();
+  if (now - _hudVisionTs  > stale) setHudDot('hud-vision-dot',  'offline');
+  if (now - _hudReasonTs  > stale) setHudDot('hud-reason-dot',  'offline');
+  if (now - _hudEyebotTs  > stale) setHudDot('hud-eyebot-dot',  'offline');
+}, 60_000);
+
+async function restartOrchestrator() {
+  if (!confirm('Restart the Nexus orchestrator process?')) return;
+  try {
+    await apiFetch('/api/control/restart-nexus', { method: 'POST' });
+    setHudDot('hud-orchestrator-dot', 'warn');
+    toast('Nexus orchestrator restarting…');
+    setTimeout(refreshOrchestratorPanel, 8000);
+  } catch (e) {
+    toast('Restart failed: ' + e.message);
+  }
+}
+
+async function restartVision() {
+  if (!confirm('Restart vision (restarts full orchestrator to reinit puppeteer)?')) return;
+  restartOrchestrator();
 }
 
 async function refreshNexusSnapshot() {

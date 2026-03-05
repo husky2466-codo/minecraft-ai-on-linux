@@ -105,20 +105,27 @@ function startEyeBot() {
   eyeBot.once('spawn', () => {
     log('[EyeBot] NexusEye spawned in world');
     try {
-      mineflayerViewer(eyeBot, { port: VIEWER_PORT, firstPerson: false });
+      mineflayerViewer(eyeBot, { port: VIEWER_PORT, firstPerson: true });
       log(`[EyeBot] prismarine-viewer on :${VIEWER_PORT}`);
     } catch (e) {
       log(`[EyeBot] Viewer failed to start: ${e.message}`);
     }
-    // Set spectator mode so NexusEye floats and is invisible, then teleport up
+    // Set spectator mode so NexusEye floats and is invisible, then teleport up and look down
     setTimeout(async () => {
       const pos = eyeBot?.entity?.position;
       await rconCommand('/gamemode spectator NexusEye');
       log('[EyeBot] Set to spectator mode (invisible, floating)');
       if (pos) {
-        await rconCommand(`/tp NexusEye ${Math.round(pos.x)} ${Math.round(pos.y + 40)} ${Math.round(pos.z)}`);
-        log('[EyeBot] Teleported to elevated position (Y+40)');
+        await rconCommand(`/tp NexusEye ${Math.round(pos.x)} ${Math.round(pos.y + 80)} ${Math.round(pos.z)}`);
+        log('[EyeBot] Teleported to overhead position (Y+80)');
       }
+      // Wait for server to update position, then orient camera straight down
+      setTimeout(() => {
+        if (eyeBot) {
+          eyeBot.look(0, Math.PI / 2, false);
+          log('[EyeBot] Camera oriented straight down (top-down view)');
+        }
+      }, 2000);
     }, 3000);
   });
 
@@ -287,16 +294,21 @@ function buildAgentContext() {
 async function getDirectives(visualDescription, recentLogs) {
   const agentCtx = buildAgentContext();
 
-  const systemPrompt = `You are Nexus — the autonomous orchestrator for a 5-agent Minecraft AI team.
-Your only output is directives. Issue one directive per agent that needs redirecting.
-Agents actively working on the right task need NO directive — omit them.
-Prioritize: (1) active threats, (2) empty storage, (3) missing materials, (4) exploration, (5) building.
-Keep each directive under 20 words. Be specific and use imperative commands.
+  const systemPrompt = `You are Nexus — the autonomous AI orchestrator for a 5-agent Minecraft team. You observe the world every 60 seconds and actively direct all agents like a hands-on manager.
 
-Format EXACTLY as (only agents needing a directive):
-AgentName: directive text`;
+ALWAYS issue a directive for EVERY agent — even those working, to reinforce or refine their task.
+Be specific: reference resources, locations, or other agents by name.
+Keep each directive under 25 words. Use imperative commands.
+Prioritize: (1) active threats/safety, (2) full storage needs emptying, (3) needed materials, (4) base construction, (5) exploration.
 
-  const userPrompt = `VISUAL SNAPSHOT:
+Format EXACTLY — one line per agent, all five:
+Rook: directive
+Vex: directive
+Drift: directive
+Echo: directive
+Sage: directive`;
+
+  const userPrompt = `VISUAL SNAPSHOT (what NexusEye sees from above):
 ${visualDescription}
 
 AGENT STATES:
@@ -305,7 +317,7 @@ ${agentCtx}
 RECENT LOG (last 50 lines):
 ${recentLogs.slice(-2000)}
 
-Issue directives now.`;
+Issue a directive for every agent now. All five lines required.`;
 
   try {
     const res = await ollamaPost('/api/chat', {
@@ -315,7 +327,7 @@ Issue directives now.`;
         { role: 'user', content: userPrompt },
       ],
       stream: false,
-      options: { num_predict: 300 },
+      options: { num_predict: 400 },
     });
     return res.message?.content?.trim() || '';
   } catch (e) {

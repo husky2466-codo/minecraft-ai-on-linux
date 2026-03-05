@@ -83,7 +83,7 @@ app.get('/api/orchestrator', async (req, res) => {
     }
     running = lines.some(l => l.includes('[Init] All systems ready'));
   } catch (_) {}
-  res.json({ running, lastTick, lastVision });
+  res.json({ running, lastTick, lastVision, loopInterval: 60 });
 });
 
 // --- NexusEye latest snapshot ---
@@ -95,6 +95,24 @@ app.get('/api/nexus/frame', async (req, res) => {
     res.set('Content-Type', 'image/png');
     res.set('Cache-Control', 'no-store');
     res.send(buf);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// --- Nexus orchestrator process control ---
+const NEXUS_START = [
+  'pgrep -f nexus-orchestrator.js | xargs -r kill -9',
+  'sleep 2',
+  `cd /home/myroproductions/Projects/minecraft-ai-on-linux/pipeline`,
+  'nohup node nexus-orchestrator.js > /home/myroproductions/nexus-orchestrator.log 2>&1 &',
+  'echo "Nexus restarted"',
+].join('; ');
+
+app.post('/api/control/restart-nexus', async (req, res) => {
+  try {
+    const { stdout, stderr } = await runRemoteCommand(NEXUS_START);
+    res.json({ ok: true, stdout, stderr });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
