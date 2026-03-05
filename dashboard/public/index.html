@@ -2193,6 +2193,15 @@ async function checkStatuses() {
   } catch (_) {
     setStatusDot('chroma', 'down', 'ChromaDB');
   }
+
+  // MindServer — check via /api/agents (bridge is server-side, always reflects real connection)
+  try {
+    const r = await apiFetch('/api/agents');
+    const online = r.list && r.list.length > 0;
+    setStatusDot('mind', online ? 'up' : 'down', `MindServer (${r.list?.length ?? 0} agents)`);
+  } catch (_) {
+    setStatusDot('mind', 'down', 'MindServer');
+  }
 }
 
 // =====================================================================
