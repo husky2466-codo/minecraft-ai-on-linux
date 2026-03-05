@@ -135,15 +135,23 @@ const NODE = '$HOME/.nvm/versions/node/v22.22.0/bin/node';
 const PATH_PREFIX = 'PATH=$HOME/.nvm/versions/node/v22.22.0/bin:$HOME/.local/bin:$PATH';
 
 // STOP: kill MindCraft (port 8080), agent children, queue proxy, Minecraft, ChromaDB
-const STOP_CMD =
-  // Kill MindServer by port (pkill -f would self-match and kill the SSH session)
-  'MCPID=$(ss -Htlnp src :8080 | grep -oP "pid=\\K[0-9]+" | head -1); ' +
-  '[ -n "$MCPID" ] && kill -9 $MCPID 2>/dev/null; ' +
-  'pkill -9 -f "init_agent.js" 2>/dev/null; ' +
-  // Kill queue proxy by port for the same reason
-  'QPID=$(ss -Htlnp src :11435 | grep -oP "pid=\\K[0-9]+" | head -1); ' +
-  '[ -n "$QPID" ] && kill -9 $QPID 2>/dev/null; ' +
-  'pkill -f "server.jar" 2>/dev/null; pkill -f "chroma run" 2>/dev/null; sleep 2; echo "Stopped"';
+// ALL kills use port lookup — pkill -f self-matches the SSH exec shell's argv and kills the session
+const STOP_CMD = [
+  // MindCraft (8080) + kill its entire process group to catch all init_agent.js children
+  'MCPID=$(ss -Htlnp src :8080 | grep -oP "pid=\\K[0-9]+" | head -1)',
+  '[ -n "$MCPID" ] && MCPGID=$(ps -o pgid= -p $MCPID 2>/dev/null | tr -d " ") && [ -n "$MCPGID" ] && kill -9 -- -$MCPGID 2>/dev/null',
+  // Queue proxy (11435)
+  'QPID=$(ss -Htlnp src :11435 | grep -oP "pid=\\K[0-9]+" | head -1)',
+  '[ -n "$QPID" ] && kill -9 $QPID 2>/dev/null',
+  // Minecraft server (25565) — graceful SIGTERM so world saves
+  'MSVPID=$(ss -Htlnp src :25565 | grep -oP "pid=\\K[0-9]+" | head -1)',
+  '[ -n "$MSVPID" ] && kill $MSVPID 2>/dev/null',
+  // ChromaDB (8000)
+  'CHRPID=$(ss -Htlnp src :8000 | grep -oP "pid=\\K[0-9]+" | head -1)',
+  '[ -n "$CHRPID" ] && kill $CHRPID 2>/dev/null',
+  'sleep 2',
+  'echo "Stopped"',
+].join('; ');
 
 // START: wrap the full sequence in a detached nohup bash -c so SSH exec returns immediately.
 // Without this, the sleep 30 for Minecraft holds the SSH channel open until it times out.
