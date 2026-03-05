@@ -18,7 +18,7 @@ app.use(express.json());
 app.use(express.static(join(__dirname, 'public')));
 
 const MINDCRAFT_PATH = '/home/myroproductions/Projects/minecraft-ai-on-linux/mindcraft';
-const CHROMA_COLLECTIONS = ['rook_memory', 'vex_memory', 'sage_memory', 'echo_memory', 'drift_memory', 'nexus_memory'];
+const CHROMA_COLLECTIONS = ['rook_memory', 'vex_memory', 'sage_memory', 'echo_memory', 'drift_memory'];
 // Returns current live agent names from MindServer (falls back to all known if empty)
 function liveAgentNames() { return agentList.map(a => a.name); }
 function isValidAgentName(name) { return /^[A-Za-z][A-Za-z0-9_-]{0,31}$/.test(name); }
@@ -58,6 +58,11 @@ tailLog('/home/myroproductions/mindcraft.log', (line) => {
 // Tail minecraft server log
 tailLog('/home/myroproductions/minecraft-server/server.log', (line) => {
   broadcast('log-line', { source: 'minecraft', line });
+});
+
+// Tail nexus orchestrator log — stream to dashboard
+tailLog('/home/myroproductions/nexus-orchestrator.log', (line) => {
+  broadcast('log-line', { source: 'nexus', line });
 });
 
 // Metrics REST endpoint
@@ -161,6 +166,9 @@ const STOP_CMD = [
   // ChromaDB (8000)
   'CHRPID=$(ss -Htlnp src :8000 | grep -oP "pid=\\K[0-9]+" | head -1)',
   '[ -n "$CHRPID" ] && kill $CHRPID 2>/dev/null',
+  // Nexus orchestrator
+  'NXPID=$(pgrep -f "nexus-orchestrator.js" | head -1)',
+  '[ -n "$NXPID" ] && kill -9 $NXPID 2>/dev/null',
   'sleep 2',
   'echo "Stopped"',
 ].join('; ');
@@ -179,6 +187,9 @@ const START_INNER = [
   'sleep 2',
   `cd ${PROJECT}/mindcraft`,
   `${PATH_PREFIX} nohup ${NODE} main.js > ~/mindcraft.log 2>&1 &`,
+  'sleep 15',
+  `cd ${PROJECT}/pipeline`,
+  `nohup ${NODE} nexus-orchestrator.js > ~/nexus-orchestrator.log 2>&1 &`,
   'echo "Stack started at $(date)"',
 ].join('\n');
 
