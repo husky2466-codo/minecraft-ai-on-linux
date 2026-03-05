@@ -131,11 +131,36 @@ app.post('/api/rcon', async (req, res) => {
 
 // --- Stack control ---
 const PROJECT = '/home/myroproductions/Projects/minecraft-ai-on-linux';
+const NODE = '$HOME/.nvm/versions/node/v22.22.0/bin/node';
+const PATH_PREFIX = 'PATH=$HOME/.nvm/versions/node/v22.22.0/bin:$HOME/.local/bin:$PATH';
+
+const STOP_CMD = [
+  // Kill MindCraft agents and server
+  'pkill -f "init_agent.js" 2>/dev/null || true',
+  'pkill -f "main.js" 2>/dev/null || true',
+  // Kill Minecraft server
+  'pkill -f "server.jar" 2>/dev/null || true',
+  // Kill ChromaDB
+  'pkill -f "chroma run" 2>/dev/null || true',
+  'sleep 2',
+].join(' && ');
+
+const START_CMD = [
+  // Start ChromaDB
+  `nohup bash ~/chromadb/start.sh > ~/chromadb/chroma.log 2>&1 &`,
+  'sleep 5',
+  // Start Minecraft server
+  `cd ~/minecraft-server && nohup java -Xmx8G -Xms4G -jar server.jar nogui > server.log 2>&1 &`,
+  'sleep 30',
+  // Start MindCraft with all agents
+  `cd ${PROJECT}/mindcraft && ${PATH_PREFIX} nohup ${NODE} main.js > ~/mindcraft.log 2>&1 &`,
+  'echo "Stack started"',
+].join(' && ');
 
 const STACK_COMMANDS = {
-  start: `cd ${PROJECT} && bash pipeline/start_stack.sh && PATH=$HOME/.nvm/versions/node/v22.22.0/bin:$HOME/.local/bin:$PATH nohup node mindcraft/main.js > ~/mindcraft.log 2>&1 &`,
-  stop: `cd ${PROJECT} && bash pipeline/stop_stack.sh`,
-  restart: `cd ${PROJECT} && bash pipeline/stop_stack.sh; sleep 5; bash pipeline/start_stack.sh && PATH=$HOME/.nvm/versions/node/v22.22.0/bin:$HOME/.local/bin:$PATH nohup node mindcraft/main.js > ~/mindcraft.log 2>&1 &`,
+  start:   START_CMD,
+  stop:    STOP_CMD,
+  restart: `${STOP_CMD} && sleep 3 && ${START_CMD}`,
 };
 
 app.post('/api/control/:action', async (req, res) => {
