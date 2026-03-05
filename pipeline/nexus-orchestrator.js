@@ -181,10 +181,18 @@ async function startBrowser() {
 async function captureFrame() {
   if (!page) return null;
   try {
-    const buf = await page.screenshot({ type: 'png', encoding: 'binary' });
+    // Hard timeout: if screenshot hangs >15s the page is stale — null it out and restart
+    const buf = await Promise.race([
+      page.screenshot({ type: 'png', encoding: 'binary' }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('screenshot timeout')), 15_000)),
+    ]);
     return Buffer.from(buf);
   } catch (e) {
-    log(`[Screenshot] Failed: ${e.message}`);
+    log(`[Screenshot] Failed: ${e.message} — marking page stale`);
+    page = null;
+    if (browser && !browser.disconnected) {
+      setTimeout(startBrowser, 5_000);
+    }
     return null;
   }
 }
@@ -381,12 +389,19 @@ function sendDirective(agent, message) {
 }
 
 // ── Main loop ─────────────────────────────────────────────────────────────
+let loopWatchdog = null;
+
 async function runLoop() {
   if (loopRunning) {
     log('[Loop] Previous tick still running — skipping');
     return;
   }
   loopRunning = true;
+  // Watchdog: if the loop runs for >90s something is hung — force-unlock
+  loopWatchdog = setTimeout(() => {
+    log('[Loop] Watchdog triggered — force-resetting loopRunning after 90s');
+    loopRunning = false;
+  }, 90_000);
   log('--- Loop tick ---');
   try {
     const frame = await captureFrame();
@@ -414,6 +429,7 @@ async function runLoop() {
   } catch (e) {
     log(`[Loop] Unhandled error: ${e.stack || e.message}`);
   } finally {
+    clearTimeout(loopWatchdog);
     loopRunning = false;
   }
 }
