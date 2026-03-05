@@ -144,9 +144,7 @@ function startEyeBot() {
     setTimeout(async () => {
       const pos = eyeBot?.entity?.position;
       await rconCommand('/gamemode spectator NexusEye');
-      await rconCommand('/gamerule doDaylightCycle false');
-      await rconCommand('/time set day');
-      log('[EyeBot] Set to spectator mode, locked time to day');
+      log('[EyeBot] Set to spectator mode');
       if (pos) {
         // Y+5 just above terrain — bot looks straight down, so third-person camera
         // places itself directly above, giving a top-down overhead view
