@@ -136,8 +136,8 @@ const PATH_PREFIX = 'PATH=$HOME/.nvm/versions/node/v22.22.0/bin:$HOME/.local/bin
 
 // Use semicolons (not &&) after background jobs — zsh/bash both handle this correctly
 const STOP_CMD =
-  'pkill -9 -f "init_agent.js" 2>/dev/null; pkill -9 -f "mindcraft/main.js" 2>/dev/null; ' +
-  'fuser -k 8080/tcp 2>/dev/null; ' +
+  'pkill -9 -f "init_agent.js" 2>/dev/null; pkill -9 -f "node main.js" 2>/dev/null; ' +
+  'fuser -k 8080/tcp; ' +
   'pkill -f "server.jar" 2>/dev/null; pkill -f "chroma run" 2>/dev/null; sleep 3; echo "Stopped"';
 
 const START_CMD =
