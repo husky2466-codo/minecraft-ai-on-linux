@@ -11,6 +11,7 @@ const SSH_CONFIG = {
 const ALLOWED_REMOTE_PATHS = [
   '/home/myroproductions/mindcraft.log',
   '/home/myroproductions/minecraft-server/server.log',
+  '/home/myroproductions/nexus-orchestrator.log',
 ];
 const MINDCRAFT_BOTS_BASE = '/home/myroproductions/Projects/minecraft-ai-on-linux/mindcraft/bots/';
 

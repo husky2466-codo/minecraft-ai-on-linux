@@ -953,7 +953,7 @@
 
   <!-- SECTION 2b: Orchestrator -->
   <section id="orchestrator">
-    <div class="section-title">&#127972; Orchestrator — Nexus <span class="badge" id="nexus-model-badge">llama3.3:70b</span></div>
+    <div class="section-title">&#127972; Orchestrator — Nexus <span class="badge" id="nexus-model-badge">qwen2.5vl:7b + qwen3.5:27b</span></div>
 
     <!-- Status bar -->
     <div class="orch-status-bar">
@@ -962,8 +962,8 @@
         <div class="orch-stat-value" id="nexus-status">offline</div>
       </div>
       <div class="orch-stat-card">
-        <div class="orch-stat-label">LAST ACTION</div>
-        <div class="orch-stat-value" id="nexus-last-action">—</div>
+        <div class="orch-stat-label">LAST TICK</div>
+        <div class="orch-stat-value" id="nexus-last-tick" style="font-size:11px;">—</div>
       </div>
       <div class="orch-stat-card">
         <div class="orch-stat-label">DIRECTIVES SENT</div>
@@ -973,22 +973,28 @@
         <div class="orch-stat-label">LAST DIRECTIVE TO</div>
         <div class="orch-stat-value" id="nexus-last-target">—</div>
       </div>
-      <div class="orch-stat-card">
-        <div class="orch-stat-label">POSITION</div>
-        <div class="orch-stat-value" id="nexus-position">—</div>
-      </div>
-      <div class="orch-stat-card">
-        <div class="orch-stat-label">HEALTH / FOOD</div>
-        <div class="orch-stat-value" id="nexus-health">—</div>
-      </div>
     </div>
 
-    <!-- Directive feed + terminal side by side -->
+    <!-- Vision summary -->
+    <div class="card" style="margin-top:12px; margin-bottom:12px;">
+      <div class="card-title">Last Vision Description</div>
+      <div id="nexus-vision-text" style="font-size:12px; color:var(--text); line-height:1.5; padding:4px 0;">—</div>
+    </div>
+
+    <!-- Snapshot + Directive feed side by side -->
     <div class="orch-panels">
 
-      <!-- Left: Directive feed -->
+      <!-- Left: NexusEye snapshot -->
       <div class="card orch-card">
-        <div class="card-title">Directive Feed <span class="badge" id="nexus-feed-count">0</span></div>
+        <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
+          <span>NexusEye View</span>
+          <span id="nexus-frame-ts" style="font-size:10px; color:var(--text-dim);">—</span>
+        </div>
+        <div style="background:#000; border-radius:4px; overflow:hidden; min-height:160px; display:flex; align-items:center; justify-content:center;">
+          <img id="nexus-snapshot" src="" alt="No snapshot yet" style="width:100%; display:none; border-radius:4px;" />
+          <span id="nexus-snapshot-placeholder" style="color:var(--text-dim); font-size:12px;">Waiting for first frame…</span>
+        </div>
+        <div class="card-title" style="margin-top:12px;">Directive Feed <span class="badge" id="nexus-feed-count">0</span></div>
         <div id="nexus-directive-feed" class="orch-feed"></div>
       </div>
 
@@ -1001,15 +1007,9 @@
             <button class="btn btn-dim btn-sm" onclick="clearNexusLog()">Clear</button>
           </div>
         </div>
-        <div id="nexus-log-box" class="log-box" style="height:320px;"></div>
+        <div id="nexus-log-box" class="log-box" style="height:480px;"></div>
       </div>
 
-    </div>
-
-    <!-- Memory summary -->
-    <div class="card" style="margin-top:12px;">
-      <div class="card-title">Nexus Memory Snapshot</div>
-      <div id="nexus-memory" class="code-block" style="max-height:120px; overflow-y:auto; white-space:pre-wrap; font-size:11px;">(loading…)</div>
     </div>
   </section>
 
@@ -2274,9 +2274,11 @@ async function init() {
   // Redraw map every 2s
   setInterval(drawMap, 2000);
 
-  // Poll orchestrator panel every 10s
+  // Poll orchestrator panel every 15s; snapshot every 30s
   refreshOrchestratorPanel();
-  setInterval(refreshOrchestratorPanel, 10000);
+  refreshNexusSnapshot();
+  setInterval(refreshOrchestratorPanel, 15000);
+  setInterval(refreshNexusSnapshot, 30000);
 
   initScrollSpy();
 }
@@ -2289,21 +2291,35 @@ let nexusAutoScroll = true;
 const NEXUS_LOG_MAX = 400;
 const nexusLogBuf = [];
 
-// Called from the WS log-line handler — filter for Nexus-relevant lines
+// Called from the WS log-line handler — route nexus source lines to the orchestrator panel
 function maybeAppendNexusLog(source, line) {
-  if (source !== 'mindcraft') return;
-  const isNexus = /Nexus/i.test(line) ||
-                  /llama3\.3/i.test(line) ||
-                  /startConversation/i.test(line);
-  if (!isNexus) return;
+  if (source !== 'nexus') return;
 
   const box = document.getElementById('nexus-log-box');
   if (!box) return;
 
-  // Detect directives: lines like startConversation('Target', '...')
-  const directiveMatch = line.match(/startConversation\(['"]([^'"]+)['"]\s*,\s*['"]([^'"]*)['"]\)/);
+  // Detect directives: [Directive] → AgentName: message
+  const directiveMatch = line.match(/\[Directive\]\s*→\s*([A-Za-z]+):\s*(.+)$/);
   if (directiveMatch) {
-    addNexusDirective(directiveMatch[1], directiveMatch[2]);
+    addNexusDirective(directiveMatch[1], directiveMatch[2].trim());
+  }
+
+  // Update vision summary inline
+  const visionMatch = line.match(/\[Vision\]\s*(.+)$/);
+  if (visionMatch) {
+    const el = document.getElementById('nexus-vision-text');
+    if (el) el.textContent = visionMatch[1];
+  }
+
+  // Mark loop as online when loop ticks
+  if (line.includes('--- Loop tick ---') || line.includes('[Init] All systems ready')) {
+    const s = document.getElementById('nexus-status');
+    if (s) { s.textContent = 'online'; s.style.color = '#69f0ae'; }
+    if (line.includes('Loop tick')) {
+      const ts = line.match(/\[(.+?)\]/)?.[1];
+      const el = document.getElementById('nexus-last-tick');
+      if (el && ts) el.textContent = new Date(ts).toLocaleTimeString();
+    }
   }
 
   nexusLogBuf.push(line);
@@ -2349,29 +2365,38 @@ function clearNexusLog() {
 async function refreshOrchestratorPanel() {
   try {
     const d = await apiFetch('/api/orchestrator');
-
-    const state = d.state;
-    if (state) {
-      const gp = state.gameplay || {};
-      const pos = gp.position;
-      document.getElementById('nexus-status').textContent = state.online ? 'online' : 'offline';
-      document.getElementById('nexus-last-action').textContent = state.action?.current || '—';
-      document.getElementById('nexus-position').textContent = pos
-        ? `${Math.round(pos.x)}, ${Math.round(pos.y)}, ${Math.round(pos.z)}`
-        : '—';
-      document.getElementById('nexus-health').textContent =
-        gp.health != null ? `${gp.health} / ${gp.hunger}` : '—';
-
-      const statusEl = document.getElementById('nexus-status');
-      statusEl.style.color = state.online ? '#69f0ae' : '#e57373';
+    const statusEl = document.getElementById('nexus-status');
+    if (statusEl) {
+      statusEl.textContent = d.running ? 'online' : 'offline';
+      statusEl.style.color = d.running ? '#69f0ae' : '#e57373';
     }
-
-    if (d.memory) {
-      const memEl = document.getElementById('nexus-memory');
-      if (memEl) memEl.textContent = typeof d.memory === 'string'
-        ? d.memory
-        : JSON.stringify(d.memory, null, 2);
+    if (d.lastTick) {
+      const el = document.getElementById('nexus-last-tick');
+      if (el) el.textContent = new Date(d.lastTick).toLocaleTimeString();
     }
+    if (d.lastVision) {
+      const el = document.getElementById('nexus-vision-text');
+      if (el) el.textContent = d.lastVision;
+    }
+  } catch (_) {}
+}
+
+async function refreshNexusSnapshot() {
+  try {
+    const res = await fetch('/api/nexus/frame', { cache: 'no-store' });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const img = document.getElementById('nexus-snapshot');
+    const placeholder = document.getElementById('nexus-snapshot-placeholder');
+    if (img) {
+      if (img.src && img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
+      img.src = url;
+      img.style.display = 'block';
+    }
+    if (placeholder) placeholder.style.display = 'none';
+    const ts = document.getElementById('nexus-frame-ts');
+    if (ts) ts.textContent = new Date().toLocaleTimeString();
   } catch (_) {}
 }
 

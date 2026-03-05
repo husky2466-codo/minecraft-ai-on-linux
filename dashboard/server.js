@@ -69,15 +69,35 @@ tailLog('/home/myroproductions/nexus-orchestrator.log', (line) => {
 app.get('/api/metrics', (req, res) => res.json(metrics));
 
 // --- Orchestrator (Nexus) state ---
-// Returns Nexus's agent state + its memory file in one call
+// Returns orchestrator status derived from its log (no longer an in-game bot)
 app.get('/api/orchestrator', async (req, res) => {
-  const state = agentStates['Nexus'] || null;
-  let memory = null;
+  let lastTick = null, lastVision = null, running = false;
   try {
-    const raw = await readRemoteFile(`${MINDCRAFT_PATH}/bots/Nexus/memory.json`);
-    memory = JSON.parse(raw);
+    const { stdout } = await runRemoteCommand(
+      'tail -100 /home/myroproductions/nexus-orchestrator.log 2>/dev/null'
+    );
+    const lines = stdout.split('\n').filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (!lastTick && lines[i].includes('--- Loop tick ---')) lastTick = lines[i].match(/\[(.+?)\]/)?.[1];
+      if (!lastVision && lines[i].includes('[Vision]')) lastVision = lines[i].replace(/.*\[Vision\]\s*/, '');
+    }
+    running = lines.some(l => l.includes('[Init] All systems ready'));
   } catch (_) {}
-  res.json({ state, memory });
+  res.json({ running, lastTick, lastVision });
+});
+
+// --- NexusEye latest snapshot ---
+app.get('/api/nexus/frame', async (req, res) => {
+  try {
+    const { stdout, code } = await runRemoteCommand('base64 -w0 /tmp/nexus-frame.png 2>/dev/null');
+    if (code !== 0 || !stdout.trim()) return res.status(404).json({ error: 'No frame available' });
+    const buf = Buffer.from(stdout.trim(), 'base64');
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'no-store');
+    res.send(buf);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // --- Agent memory files ---

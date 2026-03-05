@@ -356,7 +356,10 @@ async function runLoop() {
   log('--- Loop tick ---');
   try {
     const frame = await captureFrame();
-    if (frame) lastFrame = frame;
+    if (frame) {
+      lastFrame = frame;
+      try { fs.writeFileSync('/tmp/nexus-frame.png', frame); } catch (_) {}
+    }
 
     const visual = await describeFrame(lastFrame);
     log(`[Vision] ${visual}`);
