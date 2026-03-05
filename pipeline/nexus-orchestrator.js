@@ -26,7 +26,7 @@ const ORBIT_STEP   = 90; // 4 cardinal positions (N/E/S/W) → full loop every ~
 const AGENT_ROLES = {
   Rook:  'gatherer — mines resources and fills storage chests',
   Vex:   'combat — guards the base and eliminates threats',
-  Drift: 'explorer — maps new terrain and finds biomes/resources',
+  Drift: 'farmer — tends crops, breeds animals, and keeps the team fed',
   Echo:  'crafter — smelts ore, cooks food, crafts tools and keeps the team supplied',
   Sage:  'engineer — crafts tools, builds structures, manages inventory',
 };
@@ -54,6 +54,21 @@ function readLiveConfig() {
 }
 function writeLiveConfig(cfg) {
   try { fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2)); } catch (_) {}
+}
+
+// ── Task state (persistent per-agent goals across cycles) ─────────────────
+const TASK_STATE_FILE = path.join(process.env.HOME, 'nexus-task-state.json');
+
+function readTaskState() {
+  try { return JSON.parse(fs.readFileSync(TASK_STATE_FILE, 'utf8')); }
+  catch (_) { return { goals: {}, lastDirectives: {} }; }
+}
+
+function writeTaskState(state) {
+  try {
+    state.updatedAt = new Date().toISOString();
+    fs.writeFileSync(TASK_STATE_FILE, JSON.stringify(state, null, 2));
+  } catch (_) {}
 }
 
 // ── RCON helper — teleport NexusEye to elevated position ─────────────────
@@ -387,28 +402,48 @@ function buildAgentContext() {
   }).join('\n');
 }
 
-async function getDirectives(visualDescription, recentLogs, agentMemories = '') {
+async function getDirectives(visualDescription, recentLogs, agentMemories = '', taskState = {}) {
   const agentCtx = buildAgentContext();
+  const goals = taskState.goals || {};
+  const lastDirectives = taskState.lastDirectives || {};
 
-  const systemPrompt = `You are Nexus — the autonomous AI orchestrator for a 5-agent Minecraft team. You observe the world every 60 seconds and actively direct all agents like a hands-on manager.
+  // Build per-agent goal context line
+  const goalLines = Object.keys(AGENT_ROLES).map(name => {
+    const g = goals[name] || 'No current plan — assign an appropriate starting task';
+    const last = lastDirectives[name] ? ` | last directive: "${lastDirectives[name]}"` : '';
+    return `  ${name}: ${g}${last}`;
+  }).join('\n');
 
-ALWAYS issue a directive for EVERY agent — even those working, to reinforce or refine their task.
-Be specific: reference resources, locations, or other agents by name.
-Keep each directive under 25 words. Use imperative commands.
-Prioritize: (1) active threats/safety, (2) full storage needs emptying, (3) needed materials, (4) base construction, (5) exploration.
+  const systemPrompt = `You are Nexus — the AI project manager for a 5-agent Minecraft team. You observe every 90 seconds and issue work orders like a hands-on foreman.
 
-Format EXACTLY — one line per agent, all five:
-Rook: directive
-Vex: directive
-Drift: directive
-Echo: directive
-Sage: directive`;
+CORE RULE: Continuity over novelty. A build in progress gets finished. A farm gets tended. Goals persist until complete.
+Only change a GOAL when: (1) it is clearly finished, or (2) an emergency overrides it (threat, starvation, broken tools).
+Every DIRECTIVE must be a concrete next step that advances the agent's current GOAL — not a pivot to something new.
+
+Output EXACTLY two labeled sections, all five agents each:
+
+GOALS:
+Rook: [one-sentence multi-step goal, unchanged if still in progress]
+Vex: [goal]
+Drift: [goal]
+Echo: [goal]
+Sage: [goal]
+
+DIRECTIVES:
+Rook: [specific action this cycle, ≤20 words, that moves their goal forward]
+Vex: [directive]
+Drift: [directive]
+Echo: [directive]
+Sage: [directive]`;
 
   const memSection = agentMemories
-    ? `\nAGENT MEMORIES (relevant past events):\n${agentMemories}\n`
+    ? `\nAGENT LONG-TERM MEMORIES:\n${agentMemories}\n`
     : '';
 
-  const userPrompt = `VISUAL SNAPSHOT (what NexusEye sees from above):
+  const userPrompt = `CURRENT AGENT GOALS (carry these forward unless complete):
+${goalLines}
+
+VISUAL SNAPSHOT:
 ${visualDescription}
 ${memSection}
 AGENT STATES:
@@ -417,7 +452,7 @@ ${agentCtx}
 RECENT LOG (last 50 lines):
 ${recentLogs.slice(-2000)}
 
-Issue a directive for every agent now. All five lines required.`;
+Output GOALS then DIRECTIVES for all five agents now.`;
 
   try {
     const res = await ollamaPost('/api/chat', {
@@ -427,26 +462,35 @@ Issue a directive for every agent now. All five lines required.`;
         { role: 'user', content: userPrompt },
       ],
       stream: false,
-      options: { num_predict: 300 },
+      options: { num_predict: 450 },
     });
-    return res.message?.content?.trim() || '';
+    const raw = res.message?.content?.trim() || '';
+    log(`[Reason] Response:\n${raw}`);
+    return parseOrchResponse(raw);
   } catch (e) {
     log(`[Reason] Error: ${e.message}`);
-    return '';
+    return { directives: [], updatedGoals: {} };
   }
 }
 
-// ── Directive parser + sender ─────────────────────────────────────────────
-function parseDirectives(raw) {
+// ── Response parser — handles GOALS + DIRECTIVES two-section format ───────
+function parseOrchResponse(raw) {
   const known = new Set(Object.keys(AGENT_ROLES));
   const directives = [];
+  const updatedGoals = {};
+  let section = null;
+
   for (const line of raw.split('\n')) {
-    const m = line.match(/^([A-Za-z]+):\s*(.+)$/);
-    if (m && known.has(m[1])) {
-      directives.push({ agent: m[1], message: m[2].trim() });
-    }
+    const trimmed = line.trim();
+    if (/^GOALS:/i.test(trimmed))      { section = 'goals';      continue; }
+    if (/^DIRECTIVES:/i.test(trimmed)) { section = 'directives'; continue; }
+    const m = trimmed.match(/^([A-Za-z]+):\s*(.+)$/);
+    if (!m || !known.has(m[1])) continue;
+    const [, name, text] = m;
+    if (section === 'goals')      updatedGoals[name] = text.trim();
+    if (section === 'directives') directives.push({ agent: name, message: text.trim() });
   }
-  return directives;
+  return { directives, updatedGoals };
 }
 
 function sendDirective(agent, message) {
@@ -543,17 +587,29 @@ async function runLoop() {
     const agentMemories = await queryAgentMemories(visual);
     if (agentMemories) log(`[Memory] Retrieved facts: ${agentMemories.split('\n').length} lines`);
 
-    const raw = await getDirectives(visual, recentLogs, agentMemories);
-    log(`[Reason] Response:\n${raw}`);
+    // Load persistent task state (goals survive across cycles)
+    const taskState = readTaskState();
+    if (Object.keys(taskState.goals).length > 0) {
+      log(`[Plan] Loaded goals: ${Object.keys(taskState.goals).map(n => `${n}="${taskState.goals[n].slice(0, 40)}"`).join(', ')}`);
+    }
 
-    const directives = parseDirectives(raw);
+    const { directives, updatedGoals } = await getDirectives(visual, recentLogs, agentMemories, taskState);
+
+    // Persist updated goals and last directives for next cycle
+    const lastDirectives = {};
+    directives.forEach(d => { lastDirectives[d.agent] = d.message; });
+    writeTaskState({
+      goals: { ...taskState.goals, ...updatedGoals },
+      lastDirectives: { ...taskState.lastDirectives, ...lastDirectives },
+    });
+    if (Object.keys(updatedGoals).length > 0) {
+      log(`[Plan] Goals updated: ${Object.keys(updatedGoals).map(n => `${n}="${updatedGoals[n].slice(0, 40)}"`).join(', ')}`);
+    }
+
     if (directives.length === 0) {
-      log('[Act] No directives this cycle — agents on track');
+      log('[Act] No directives parsed this cycle');
     } else {
       // Stagger dispatch so agents enter the Ollama queue one at a time.
-      // All 5 agents firing simultaneously causes the 3rd-5th to finish inference
-      // after the next directive arrives, making MindCraft discard the response.
-      // Stagger = intervalMs / numAgents, capped at 15s so it doesn't eat the full cycle.
       const cfg = readLiveConfig();
       const staggerMs = cfg.directiveStaggerMs ?? Math.min(15000, Math.floor((cfg.intervalMs ?? INTERVAL_MS) / directives.length));
       for (let i = 0; i < directives.length; i++) {
