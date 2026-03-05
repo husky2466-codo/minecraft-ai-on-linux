@@ -305,7 +305,57 @@ function readLastLines(filePath, n = 50) {
   }
 }
 
-// ── Reasoning — qwen3.5:27b ───────────────────────────────────────────────
+// ── Agent long-term memory retrieval from ChromaDB ────────────────────────
+const CHROMA_BASE = 'http://localhost:8000/api/v2/tenants/default_tenant/databases/default_database';
+let _chromaCols = null; // cached collection list, refreshed every 10 min
+let _chromaColsTs = 0;
+
+async function getChromaCols() {
+  if (Date.now() - _chromaColsTs < 10 * 60 * 1000 && _chromaCols) return _chromaCols;
+  try {
+    const r = await fetch(`${CHROMA_BASE}/collections`);
+    _chromaCols = await r.json();
+    _chromaColsTs = Date.now();
+  } catch (_) { _chromaCols = []; }
+  return _chromaCols || [];
+}
+
+async function queryAgentMemories(queryText) {
+  try {
+    // Embed the query via nomic-embed-text on DGX
+    const embRes = await fetch('http://10.0.0.69:11434/api/embeddings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'nomic-embed-text', prompt: queryText }),
+    });
+    const embData = await embRes.json();
+    if (!embData.embedding) return '';
+
+    const cols = await getChromaCols();
+    const lines = [];
+
+    for (const agentName of Object.keys(AGENT_ROLES)) {
+      const colName = `${agentName.toLowerCase()}_memory`;
+      const col = cols.find(c => c.name === colName);
+      if (!col?.id) continue;
+
+      const qRes = await fetch(`${CHROMA_BASE}/collections/${col.id}/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query_embeddings: [embData.embedding], n_results: 3 }),
+      });
+      const qData = await qRes.json();
+      const docs = qData.documents?.[0]?.filter(Boolean) || [];
+      if (docs.length > 0) lines.push(`${agentName}: ${docs.join('; ')}`);
+    }
+    return lines.join('\n');
+  } catch (e) {
+    log(`[Memory] Query error: ${e.message}`);
+    return '';
+  }
+}
+
+// ── Reasoning — qwen2.5:7b ────────────────────────────────────────────────
 function buildAgentContext() {
   return Object.keys(AGENT_ROLES).map(name => {
     const s = agentStates[name];
@@ -321,7 +371,7 @@ function buildAgentContext() {
   }).join('\n');
 }
 
-async function getDirectives(visualDescription, recentLogs) {
+async function getDirectives(visualDescription, recentLogs, agentMemories = '') {
   const agentCtx = buildAgentContext();
 
   const systemPrompt = `You are Nexus — the autonomous AI orchestrator for a 5-agent Minecraft team. You observe the world every 60 seconds and actively direct all agents like a hands-on manager.
@@ -338,9 +388,13 @@ Drift: directive
 Echo: directive
 Sage: directive`;
 
+  const memSection = agentMemories
+    ? `\nAGENT MEMORIES (relevant past events):\n${agentMemories}\n`
+    : '';
+
   const userPrompt = `VISUAL SNAPSHOT (what NexusEye sees from above):
 ${visualDescription}
-
+${memSection}
 AGENT STATES:
 ${agentCtx}
 
@@ -430,7 +484,11 @@ async function runLoop() {
 
     const recentLogs = readLastLines(MC_LOG, 50);
 
-    const raw = await getDirectives(visual, recentLogs);
+    // Query long-term memory for context relevant to what we're currently seeing
+    const agentMemories = await queryAgentMemories(visual);
+    if (agentMemories) log(`[Memory] Retrieved facts: ${agentMemories.split('\n').length} lines`);
+
+    const raw = await getDirectives(visual, recentLogs, agentMemories);
     log(`[Reason] Response:\n${raw}`);
 
     const directives = parseDirectives(raw);
