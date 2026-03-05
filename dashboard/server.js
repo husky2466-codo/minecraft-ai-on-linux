@@ -214,6 +214,52 @@ app.post('/api/agents/:name/:action', (req, res) => {
   res.json({ ok: true, agent: name, action });
 });
 
+// Inject a message into an agent as if sent by a player — pauses self-prompt, triggers response
+app.post('/api/agents/:name/message', (req, res) => {
+  const { name } = req.params;
+  const { from = 'Operator', message } = req.body;
+  if (!isValidAgentName(name)) return res.status(404).json({ error: 'Unknown agent' });
+  if (!message?.trim()) return res.status(400).json({ error: 'message required' });
+  const sent = sendCommand('send-message', name, { from, message: message.trim() });
+  if (!sent) return res.status(503).json({ error: 'MindServer not connected' });
+  res.json({ ok: true, agent: name, from, message: message.trim() });
+});
+
+// Broadcast a message to ALL connected agents
+app.post('/api/agents/broadcast/message', (req, res) => {
+  const { from = 'Operator', message } = req.body;
+  if (!message?.trim()) return res.status(400).json({ error: 'message required' });
+  const names = agentList.map(a => a.name);
+  let sent = 0;
+  for (const name of names) {
+    if (sendCommand('send-message', name, { from, message: message.trim() })) sent++;
+  }
+  res.json({ ok: true, sent, agents: names, from, message: message.trim() });
+});
+
+// Set an agent's active self-prompt goal by injecting a !goal command
+app.post('/api/agents/:name/goal', (req, res) => {
+  const { name } = req.params;
+  const { goal } = req.body;
+  if (!isValidAgentName(name)) return res.status(404).json({ error: 'Unknown agent' });
+  if (!goal?.trim()) return res.status(400).json({ error: 'goal required' });
+  const sent = sendCommand('send-message', name, { from: 'Operator', message: `!goal "${goal.trim()}"` });
+  if (!sent) return res.status(503).json({ error: 'MindServer not connected' });
+  res.json({ ok: true, agent: name, goal: goal.trim() });
+});
+
+// Toggle an agent mode by injecting a !setMode command
+app.post('/api/agents/:name/mode', (req, res) => {
+  const { name } = req.params;
+  const { mode, enabled } = req.body;
+  if (!isValidAgentName(name)) return res.status(404).json({ error: 'Unknown agent' });
+  if (!mode) return res.status(400).json({ error: 'mode required' });
+  const value = enabled ? 'true' : 'false';
+  const sent = sendCommand('send-message', name, { from: 'Operator', message: `!setMode ${mode} ${value}` });
+  if (!sent) return res.status(503).json({ error: 'MindServer not connected' });
+  res.json({ ok: true, agent: name, mode, enabled });
+});
+
 const PORT = 4000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Dashboard running at http://0.0.0.0:${PORT}`);

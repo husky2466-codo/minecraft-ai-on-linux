@@ -601,6 +601,31 @@
       flex-wrap: wrap;
     }
 
+    /* --- Direct Comms & Mode Controls --- */
+    .comms-layout { display: grid; grid-template-columns: 1fr 220px; gap: 14px; }
+    @media (max-width: 900px) { .comms-layout { grid-template-columns: 1fr; } }
+    .comms-left { display: flex; flex-direction: column; gap: 8px; }
+    .comms-input-row { display: flex; gap: 8px; align-items: center; }
+    .comms-select { background: var(--card); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 8px; font-size: 13px; }
+    .comms-msg-input { flex: 1; background: var(--card); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 10px; font-size: 13px; }
+    .comms-msg-input:focus, .comms-select:focus { outline: none; border-color: var(--accent); }
+    .comms-log { background: #080a10; border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-family: monospace; font-size: 11px; min-height: 80px; max-height: 140px; overflow-y: auto; }
+    .comms-right { display: flex; flex-direction: column; gap: 6px; }
+    .quick-directives { display: flex; flex-direction: column; gap: 5px; }
+    .btn.qd { text-align: left; justify-content: flex-start; font-size: 11px; padding: 5px 10px; }
+
+    .mode-controls-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; margin-top: 4px; }
+    .mode-agent-block { background: #0a0d18; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+    .mode-agent-name { font-size: 12px; font-weight: 700; margin-bottom: 8px; letter-spacing: .04em; }
+    .mode-toggles { display: flex; flex-wrap: wrap; gap: 6px; }
+    .mode-chip { display: flex; align-items: center; gap: 5px; background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 3px 10px; font-size: 11px; cursor: pointer; transition: all .15s; user-select: none; }
+    .mode-chip.on { border-color: var(--accent2); color: var(--accent2); }
+    .mode-chip.off { border-color: #555; color: #777; }
+    .mode-chip:hover { opacity: .8; }
+    .mode-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .mode-chip.on .mode-dot { background: var(--accent2); }
+    .mode-chip.off .mode-dot { background: #555; }
+
     /* --- Orchestrator section --- */
     .orch-status-bar {
       display: grid;
@@ -863,6 +888,59 @@
       </div>
 
     </div><!-- /cc-grid -->
+
+    <!-- Direct Comms — full width below grid -->
+    <div class="card" style="margin-top:14px;">
+      <div class="card-title">Direct Comms <span style="font-size:11px; color:var(--text-dim); font-weight:400;">— inject a message to any agent as if you spoke to them in-game</span></div>
+      <div class="comms-layout">
+
+        <!-- Left: message panel -->
+        <div class="comms-left">
+          <div class="comms-input-row">
+            <select id="comms-agent" class="comms-select">
+              <option value="__broadcast__">📢 All Agents</option>
+              <option value="Nexus">Nexus</option>
+              <option value="Rook">Rook</option>
+              <option value="Vex">Vex</option>
+              <option value="Drift">Drift</option>
+              <option value="Echo">Echo</option>
+              <option value="Sage">Sage</option>
+            </select>
+            <input type="text" id="comms-msg" class="comms-msg-input" placeholder="Type a message or command (e.g. !goal 'gather oak logs')..." />
+            <button class="btn btn-accent" onclick="sendCommsMessage()">Send</button>
+          </div>
+          <div id="comms-log" class="comms-log"></div>
+        </div>
+
+        <!-- Right: quick directives -->
+        <div class="comms-right">
+          <div style="font-size:11px; color:var(--text-dim); margin-bottom:8px; text-transform:uppercase; letter-spacing:.05em;">Quick Directives</div>
+          <div class="quick-directives">
+            <button class="btn btn-dim btn-sm qd" onclick="quickDirective('Rook', '!goal &quot;Gather wood and coal. Deposit into storage chests.&quot;')">Rook: Gather</button>
+            <button class="btn btn-dim btn-sm qd" onclick="quickDirective('Vex', '!goal &quot;Scout the area. Kill any hostile mobs nearby.&quot;')">Vex: Scout</button>
+            <button class="btn btn-dim btn-sm qd" onclick="quickDirective('Drift', '!goal &quot;Explore in a new direction. Report what you find.&quot;')">Drift: Explore</button>
+            <button class="btn btn-dim btn-sm qd" onclick="quickDirective('Sage', '!goal &quot;Craft wooden pickaxes and stone tools for the team.&quot;')">Sage: Craft</button>
+            <button class="btn btn-dim btn-sm qd" onclick="quickDirective('Echo', '!goal &quot;Check on each teammate. Deliver resources where needed.&quot;')">Echo: Coordinate</button>
+            <button class="btn btn-dim btn-sm qd" onclick="quickDirective('__broadcast__', '!stop')">Stop All</button>
+            <button class="btn btn-dim btn-sm qd" onclick="quickDirective('__broadcast__', 'What are you currently doing? Give me a quick status.')">Status All</button>
+            <button class="btn btn-dim btn-sm qd" onclick="quickDirective('Nexus', 'Survey the team and issue corrective directives now.')">Nexus: Survey</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Agent Mode Controls — full width -->
+    <div class="card" style="margin-top:14px;">
+      <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
+        <span>Agent Mode Controls</span>
+        <span style="font-size:11px; color:var(--text-dim); font-weight:400;">Toggles send !setMode to the agent live</span>
+      </div>
+      <div id="mode-controls-grid" class="mode-controls-grid">
+        <!-- filled by JS -->
+      </div>
+    </div>
+
   </section>
 
   <!-- SECTION 2: Live Agents -->
@@ -1271,6 +1349,12 @@ function handleAgentStates(data) {
       agentData[name] = { ...agentData[name], ...state };
     });
   }
+  // Sync mode toggles from live state
+  if (Array.isArray(data)) {
+    data.forEach(a => { if (a.name) updateModeStateFromAgentData(a.name, a); });
+  } else if (data && typeof data === 'object') {
+    Object.entries(data).forEach(([name, state]) => updateModeStateFromAgentData(name, state));
+  }
   renderAgentCards();
   drawMap();
   updateOnlineCount();
@@ -1382,6 +1466,131 @@ async function agentAction(name, action) {
   } catch (e) {
     toast(`Error: ${e.message}`);
   }
+}
+
+// =====================================================================
+//  DIRECT COMMS
+// =====================================================================
+const AGENT_MODES = ['self_preservation', 'unstuck', 'cowardice', 'self_defense', 'hunting', 'item_collecting', 'torch_placing', 'elbow_room'];
+const AGENT_NAMES = ['Nexus', 'Rook', 'Vex', 'Drift', 'Echo', 'Sage'];
+
+// Track optimistic mode state per agent (updated from full_state events)
+const agentModeState = {};
+
+async function sendCommsMessage() {
+  const agent = document.getElementById('comms-agent').value;
+  const msgEl = document.getElementById('comms-msg');
+  const message = msgEl.value.trim();
+  if (!message) return;
+
+  const log = document.getElementById('comms-log');
+  const ts = new Date().toLocaleTimeString();
+  const target = agent === '__broadcast__' ? 'All' : agent;
+
+  try {
+    if (agent === '__broadcast__') {
+      await apiFetch('/api/agents/broadcast/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: 'Operator', message }),
+      });
+    } else {
+      await apiFetch(`/api/agents/${agent}/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: 'Operator', message }),
+      });
+    }
+    const line = document.createElement('div');
+    line.style.cssText = 'color:#69f0ae; margin-bottom:3px;';
+    line.textContent = `[${ts}] → ${target}: ${message}`;
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+    msgEl.value = '';
+  } catch (e) {
+    const line = document.createElement('div');
+    line.style.cssText = 'color:#e57373; margin-bottom:3px;';
+    line.textContent = `[${ts}] Error: ${e.message}`;
+    log.appendChild(line);
+  }
+}
+
+function quickDirective(agent, message) {
+  document.getElementById('comms-agent').value = agent;
+  document.getElementById('comms-msg').value = message;
+  sendCommsMessage();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const commsMsg = document.getElementById('comms-msg');
+  if (commsMsg) commsMsg.addEventListener('keydown', e => { if (e.key === 'Enter') sendCommsMessage(); });
+});
+
+// =====================================================================
+//  AGENT MODE CONTROLS
+// =====================================================================
+function buildModeControls() {
+  const grid = document.getElementById('mode-controls-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  for (const name of AGENT_NAMES) {
+    const block = document.createElement('div');
+    block.className = 'mode-agent-block';
+    block.id = `mode-block-${name}`;
+    const color = AGENT_COLORS[name] || '#aaa';
+    block.innerHTML = `<div class="mode-agent-name" style="color:${color}">${name}</div>
+      <div class="mode-toggles" id="mode-toggles-${name}"></div>`;
+    grid.appendChild(block);
+    renderModeChips(name);
+  }
+}
+
+function renderModeChips(agentName) {
+  const container = document.getElementById(`mode-toggles-${agentName}`);
+  if (!container) return;
+  const modes = agentModeState[agentName] || {};
+  container.innerHTML = '';
+  for (const mode of AGENT_MODES) {
+    const isOn = modes[mode] !== false; // default optimistic ON
+    const chip = document.createElement('div');
+    chip.className = `mode-chip ${isOn ? 'on' : 'off'}`;
+    chip.id = `mode-chip-${agentName}-${mode}`;
+    chip.title = `Click to toggle ${mode}`;
+    chip.innerHTML = `<div class="mode-dot"></div><span>${mode.replace(/_/g,' ')}</span>`;
+    chip.onclick = () => toggleMode(agentName, mode, !isOn, chip);
+    container.appendChild(chip);
+  }
+}
+
+async function toggleMode(agentName, mode, enable, chipEl) {
+  // Optimistic UI update
+  chipEl.className = `mode-chip ${enable ? 'on' : 'off'}`;
+  chipEl.querySelector('.mode-dot').style.background = enable ? 'var(--accent2)' : '#555';
+  if (!agentModeState[agentName]) agentModeState[agentName] = {};
+  agentModeState[agentName][mode] = enable;
+
+  try {
+    await apiFetch(`/api/agents/${agentName}/mode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode, enabled: enable }),
+    });
+    toast(`${agentName}: ${mode} → ${enable ? 'ON' : 'OFF'}`);
+  } catch (e) {
+    // Revert on failure
+    agentModeState[agentName][mode] = !enable;
+    chipEl.className = `mode-chip ${!enable ? 'on' : 'off'}`;
+    toast(`Error: ${e.message}`);
+  }
+}
+
+// Update mode state from full_state data coming from MindServer
+function updateModeStateFromAgentData(name, state) {
+  const modeObj = state?.modes;
+  if (!modeObj || typeof modeObj !== 'object') return;
+  if (!agentModeState[name]) agentModeState[name] = {};
+  Object.assign(agentModeState[name], modeObj);
+  renderModeChips(name);
 }
 
 // =====================================================================
@@ -2022,6 +2231,7 @@ function escHtml(str) {
 // =====================================================================
 async function init() {
   buildAgentCards();
+  buildModeControls();
   drawMap();
   initCharts();
 
