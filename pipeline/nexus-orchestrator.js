@@ -12,7 +12,7 @@ const {
   getBottlenecks,
   assignAgents,
   markVisited,
-  getNearestUnexplored,
+  getNearestUnexplored, // reserved — used in Phase 8 Cave Exploration directives
 } = require('./nexus-phase-engine');
 
 // ── Config ────────────────────────────────────────────────────────────────
@@ -637,8 +637,7 @@ async function runLoop() {
     }
 
     // 3. Emergency regression: if Phase 8+ and armor count drops below 10, regress to Phase 6
-    const armorCondition = conditions.find(c => c.label === 'armor equipped');
-    const armorCount = armorCondition ? armorCondition.have : null;
+    const armorCount = conditions.find(c => c.label === 'armor equipped')?.have ?? null;
     if (phase >= 8 && armorCount !== null && armorCount < 10) {
       log(`[Phase] EMERGENCY: armor count ${armorCount} < 10 — regressing to Phase 6 (Armor and Weapons)`);
       taskState.phase = 6;
@@ -653,7 +652,8 @@ async function runLoop() {
     // 5. Update exploration tracker from current agent positions
     taskState.exploredChunks = markVisited(agentStates, taskState.exploredChunks);
 
-    log(`[Phase] ${phaseName} (${taskState.phase}/9) | bottlenecks: ${bottlenecks.map(b => `${b.label} ${b.have}/${b.need}`).join(', ') || 'none'}`);
+    const logPhaseName = PHASES_FOR_LOG[taskState.phase] || phaseName;
+    log(`[Phase] ${logPhaseName} (${taskState.phase}/9) | bottlenecks: ${bottlenecks.map(b => `${b.label} ${b.have}/${b.need}`).join(', ') || 'none'}`);
     log(`[Phase] Assignments: ${Object.entries(assignments).map(([n, a]) => `${n}=${a.task}:${a.target}`).join(', ')}`);
 
     const phaseBrief = { phaseName, phaseFocus, bottlenecks, assignments };
