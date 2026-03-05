@@ -435,6 +435,9 @@ function buildAgentContext() {
 async function getDirectives(visualDescription, recentLogs, agentMemories = '', taskState = {}, phaseBrief = {}) {
   const agentCtx = buildAgentContext();
   const { phaseName = 'Unknown', phaseFocus = '', bottlenecks = [], assignments = {} } = phaseBrief;
+  if (Object.keys(assignments).length === 0) {
+    log('[Reason] WARNING: empty assignments in phaseBrief — phase engine may not have run');
+  }
 
   // Build assignment block for LLM
   const assignmentBlock = Object.entries(assignments).map(([name, a]) => {
@@ -502,7 +505,7 @@ Write GOALS then DIRECTIVES now.`;
         { role: 'user',   content: userPrompt },
       ],
       stream: false,
-      options: { num_predict: 500 },
+      options: { num_predict: 600 },
     });
     const raw = res.message?.content?.trim() || '';
     log(`[Reason] Response:\n${raw}`);
@@ -684,6 +687,9 @@ async function runLoop() {
     if (directives.length === 0) {
       log('[Act] No directives parsed this cycle');
     } else {
+      if (directives.length < 5) {
+        log(`[Act] WARNING: only ${directives.length}/5 directives parsed — response may have been truncated`);
+      }
       // Stagger dispatch so agents enter the Ollama queue one at a time.
       const cfg = readLiveConfig();
       const staggerMs = cfg.directiveStaggerMs ?? Math.min(15000, Math.floor((cfg.intervalMs ?? INTERVAL_MS) / directives.length));
