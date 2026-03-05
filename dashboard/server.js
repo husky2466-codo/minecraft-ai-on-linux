@@ -76,7 +76,7 @@ app.get('/api/memories/:agent', async (req, res) => {
 });
 
 // --- ChromaDB proxy (v2 API) ---
-const CHROMA = 'http://10.0.0.10:8000/api/v2';
+const CHROMA = 'http://10.0.0.10:8000/api/v2/tenants/default_tenant/databases/default_database';
 
 app.get('/api/chromadb/collections', async (req, res) => {
   try {
