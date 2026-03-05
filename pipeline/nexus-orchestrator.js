@@ -247,9 +247,28 @@ function connectMindServer() {
     log(`[MindServer] Agents: ${agents.map(a => a.name).join(', ')}`);
   });
 
+  let eyebotCentered = false;
   socket.on('state-update', (states) => {
     const arr = Array.isArray(states) ? states : Object.values(states);
     arr.forEach(s => { if (s?.name) agentStates[s.name] = s; });
+
+    // On first state-update with position data, re-center NexusEye above agent cluster
+    if (!eyebotCentered && eyeBot) {
+      const positions = arr
+        .filter(s => s?.position)
+        .map(s => s.position);
+      if (positions.length > 0) {
+        const cx = Math.round(positions.reduce((a, p) => a + p.x, 0) / positions.length);
+        const cz = Math.round(positions.reduce((a, p) => a + p.z, 0) / positions.length);
+        const cy = Math.round(Math.max(...positions.map(p => p.y)) + 80);
+        rconCommand(`/tp NexusEye ${cx} ${cy} ${cz}`)
+          .then(() => {
+            log(`[EyeBot] Re-centered above agent cluster at (${cx}, ${cy}, ${cz})`);
+            setTimeout(() => { if (eyeBot) eyeBot.look(0, Math.PI / 2, false); }, 1000);
+            eyebotCentered = true;
+          });
+      }
+    }
   });
 
   socket.on('connect_error', (e) => log(`[MindServer] Connect error: ${e.message}`));
@@ -327,9 +346,10 @@ Issue a directive for every agent now. All five lines required.`;
         { role: 'user', content: userPrompt },
       ],
       stream: false,
-      options: { num_predict: 400 },
+      options: { num_predict: 400, think: false },
     });
-    return res.message?.content?.trim() || '';
+    // qwen3 thinking models put content in message.content; fallback to thinking field
+    return (res.message?.content?.trim() || res.message?.thinking?.trim() || '');
   } catch (e) {
     log(`[Reason] Error: ${e.message}`);
     return '';
