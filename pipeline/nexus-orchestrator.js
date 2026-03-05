@@ -21,7 +21,7 @@ const MC_LOG         = path.join(process.env.HOME, 'mindcraft.log');
 // NexusEye orbits the agent cluster — radius/height in blocks, step in degrees per tick
 const ORBIT_RADIUS = 35;
 const ORBIT_HEIGHT = 22;
-const ORBIT_STEP   = 45; // 8 positions → full rotation every ~4 min at 30s ticks
+const ORBIT_STEP   = 90; // 4 cardinal positions (N/E/S/W) → full loop every ~2 min at 30s ticks
 
 const AGENT_ROLES = {
   Rook:  'gatherer — mines resources and fills storage chests',
@@ -472,7 +472,7 @@ async function orbitEyeBot() {
   await rconCommand(`/tp NexusEye ${ex} ${ey} ${ez}`);
 
   // Look toward centroid with an oblique downward angle
-  await new Promise(r => setTimeout(r, 600));
+  await new Promise(r => setTimeout(r, 1000));
   if (eyeBot) {
     const yaw   = Math.atan2(cz - ez, cx - ex);
     const dist  = Math.sqrt((cx - ex) ** 2 + (cz - ez) ** 2);
@@ -516,8 +516,8 @@ async function runLoop() {
   try {
     // Move NexusEye to next orbit position before capturing the frame
     await orbitEyeBot();
-    // Brief pause so prismarine-viewer renders the new angle before screenshot
-    await new Promise(r => setTimeout(r, 1500));
+    // Pause so prismarine-viewer WebGL re-renders the new angle before screenshot
+    await new Promise(r => setTimeout(r, 3000));
 
     const frame = await captureFrame();
     if (frame) {
