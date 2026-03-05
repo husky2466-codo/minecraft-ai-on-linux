@@ -23,7 +23,7 @@ RCON_PORT = 25575
 RCON_PASS = 'ailab743915'
 
 CX, CZ = 0, 0     # arena center
-SY = -60           # surface Y for this flat config (bedrock@-64, 3x dirt, grass@-60)
+SY = 4             # surface Y — script fills stone from Y=-63 to SY-1 for real underground
 AR = 50            # arena half-width (walls at ±50, arena is 100x100)
 
 HILL_R  = 14       # hill base radius
@@ -110,21 +110,21 @@ def fill_disc(r, x1, y1, z1, x2, y2, z2, block, center_x=CX, center_z=CZ):
 # ── build phases ──────────────────────────────────────────────────────────────
 
 def phase_ground(r):
-    """Clear arena, add underground stone for caves, reset surface."""
+    """Clear arena, fill underground stone, set surface grass."""
     print('\n[1/10] Setting up ground...')
 
-    # Clear everything in arena from Y=48 up to Y=120 (fresh slate)
-    r.fill(CX-AR, 48, CZ-AR, CX+AR, 120, CZ+AR, 'minecraft:air')
+    # Clear everything in arena well above the surface (fresh slate above)
+    r.fill(CX-AR, SY+1, CZ-AR, CX+AR, SY+120, CZ+AR, 'minecraft:air')
     time.sleep(0.5)
 
-    # Underground stone layer (Y=48–62) — gives cave tunnels material to cut through
-    r.fill(CX-AR, 48, CZ-AR, CX+AR, 62, CZ+AR, 'minecraft:stone')
+    # Underground stone fill — bedrock to surface-1 (gives caves real material to cut through)
+    r.fill(CX-AR, -63, CZ-AR, CX+AR, SY-2, CZ+AR, 'minecraft:stone')
     time.sleep(0.3)
 
-    # Dirt layer (Y=63)
-    r.fill(CX-AR, 63, CZ-AR, CX+AR, 63, CZ+AR, 'minecraft:dirt')
+    # Dirt layer just below surface
+    r.fill(CX-AR, SY-1, CZ-AR, CX+AR, SY-1, CZ+AR, 'minecraft:dirt')
 
-    # Surface grass (Y=64)
+    # Surface grass
     r.fill(CX-AR, SY, CZ-AR, CX+AR, SY, CZ+AR, 'minecraft:grass_block')
 
     print('  done.')
@@ -199,45 +199,51 @@ def phase_caves(r):
     # Stone around arena underground is at Y=48–62
     # Cave tunnels: 3 wide, 3 tall, going from hill base outward
 
+    # Cave Y levels relative to surface (SY):
+    # entrance: SY-4 to SY-1 (top of entrance is 1 below surface)
+    # deep:     SY-8 to SY-3
+    CE = SY - 4   # cave entrance floor
+    CD = SY - 8   # cave deep floor
+
     # ── North cave
-    r.fill(CX-2, 55, CZ-35, CX+2, 60, CZ-14, 'minecraft:air')   # entrance tunnel
-    r.fill(CX-2, 52, CZ-48, CX+2, 57, CZ-35, 'minecraft:air')   # deeper section
+    r.fill(CX-2, CE, CZ-35, CX+2, SY-1, CZ-14, 'minecraft:air')   # entrance tunnel
+    r.fill(CX-2, CD, CZ-48, CX+2, CE+1, CZ-35, 'minecraft:air')   # deeper section
     # ore veins
-    r.setblock(CX-3, 57, CZ-38, 'minecraft:coal_ore')
-    r.setblock(CX+3, 56, CZ-40, 'minecraft:coal_ore')
-    r.setblock(CX-3, 54, CZ-43, 'minecraft:iron_ore')
-    r.setblock(CX+3, 53, CZ-46, 'minecraft:iron_ore')
-    r.setblock(CX, 52, CZ-42, 'minecraft:coal_ore')
+    r.setblock(CX-3, CE+1, CZ-38, 'minecraft:coal_ore')
+    r.setblock(CX+3, CE,   CZ-40, 'minecraft:coal_ore')
+    r.setblock(CX-3, CD+2, CZ-43, 'minecraft:iron_ore')
+    r.setblock(CX+3, CD+1, CZ-46, 'minecraft:iron_ore')
+    r.setblock(CX,   CD,   CZ-42, 'minecraft:coal_ore')
 
     # ── South cave
-    r.fill(CX-2, 55, CZ+14, CX+2, 60, CZ+35, 'minecraft:air')
-    r.fill(CX-2, 52, CZ+35, CX+2, 57, CZ+48, 'minecraft:air')
-    r.setblock(CX-3, 57, CZ+38, 'minecraft:coal_ore')
-    r.setblock(CX+3, 56, CZ+40, 'minecraft:coal_ore')
-    r.setblock(CX-3, 54, CZ+43, 'minecraft:iron_ore')
-    r.setblock(CX, 52, CZ+42, 'minecraft:coal_ore')
+    r.fill(CX-2, CE, CZ+14, CX+2, SY-1, CZ+35, 'minecraft:air')
+    r.fill(CX-2, CD, CZ+35, CX+2, CE+1, CZ+48, 'minecraft:air')
+    r.setblock(CX-3, CE+1, CZ+38, 'minecraft:coal_ore')
+    r.setblock(CX+3, CE,   CZ+40, 'minecraft:coal_ore')
+    r.setblock(CX-3, CD+2, CZ+43, 'minecraft:iron_ore')
+    r.setblock(CX,   CD,   CZ+42, 'minecraft:coal_ore')
 
     # ── West cave
-    r.fill(CX-35, 55, CZ-2, CX-14, 60, CZ+2, 'minecraft:air')
-    r.fill(CX-48, 52, CZ-2, CX-35, 57, CZ+2, 'minecraft:air')
-    r.setblock(CX-38, 57, CZ-3, 'minecraft:coal_ore')
-    r.setblock(CX-40, 56, CZ+3, 'minecraft:coal_ore')
-    r.setblock(CX-43, 54, CZ-3, 'minecraft:iron_ore')
-    r.setblock(CX-46, 53, CZ, 'minecraft:iron_ore')
+    r.fill(CX-35, CE, CZ-2, CX-14, SY-1, CZ+2, 'minecraft:air')
+    r.fill(CX-48, CD, CZ-2, CX-35, CE+1, CZ+2, 'minecraft:air')
+    r.setblock(CX-38, CE+1, CZ-3, 'minecraft:coal_ore')
+    r.setblock(CX-40, CE,   CZ+3, 'minecraft:coal_ore')
+    r.setblock(CX-43, CD+2, CZ-3, 'minecraft:iron_ore')
+    r.setblock(CX-46, CD+1, CZ,   'minecraft:iron_ore')
 
     # ── East cave
-    r.fill(CX+14, 55, CZ-2, CX+35, 60, CZ+2, 'minecraft:air')
-    r.fill(CX+35, 52, CZ-2, CX+48, 57, CZ+2, 'minecraft:air')
-    r.setblock(CX+38, 57, CZ-3, 'minecraft:coal_ore')
-    r.setblock(CX+40, 56, CZ+3, 'minecraft:coal_ore')
-    r.setblock(CX+43, 54, CZ-3, 'minecraft:iron_ore')
-    r.setblock(CX+46, 53, CZ, 'minecraft:iron_ore')
+    r.fill(CX+14, CE, CZ-2, CX+35, SY-1, CZ+2, 'minecraft:air')
+    r.fill(CX+35, CD, CZ-2, CX+48, CE+1, CZ+2, 'minecraft:air')
+    r.setblock(CX+38, CE+1, CZ-3, 'minecraft:coal_ore')
+    r.setblock(CX+40, CE,   CZ+3, 'minecraft:coal_ore')
+    r.setblock(CX+43, CD+2, CZ-3, 'minecraft:iron_ore')
+    r.setblock(CX+46, CD+1, CZ,   'minecraft:iron_ore')
 
     # ── Central chamber where all 4 caves meet (under the hill)
-    r.fill(CX-4, 52, CZ-4, CX+4, 60, CZ+4, 'minecraft:air')
-    r.setblock(CX, 55, CZ, 'minecraft:glowstone')    # lighting in cave center
-    r.setblock(CX+4, 55, CZ+4, 'minecraft:glowstone')
-    r.setblock(CX-4, 55, CZ-4, 'minecraft:glowstone')
+    r.fill(CX-4, CD, CZ-4, CX+4, SY-1, CZ+4, 'minecraft:air')
+    r.setblock(CX,   CD+2, CZ,   'minecraft:glowstone')   # lighting in cave center
+    r.setblock(CX+4, CD+2, CZ+4, 'minecraft:glowstone')
+    r.setblock(CX-4, CD+2, CZ-4, 'minecraft:glowstone')
 
     # Cave entrance markers (visible at hill base — gravel lip)
     for dx, dz in [(0,-14), (0,14), (-14,0), (14,0)]:
@@ -250,12 +256,18 @@ def phase_trees(r):
     """Place oak trees in a ring between TREE_R_MIN and TREE_R_MAX."""
     print('\n[6/10] Planting trees...')
 
-    # Tree positions — ring around clearing, avoiding caves (cardinal axes)
+    # Tree positions — two rings around clearing, avoiding cave axes (cardinal ±2)
     trees = [
-        (-38, -38), (-38, 38), (38, -38), (38, 38),   # corners
+        # Outer ring (r≈44-48)
+        (-38, -38), (-38, 38), (38, -38), (38, 38),   # diagonal corners
         (-44, -10), (-44, 10), (44, -10), (44, 10),   # east/west flanks
         (-10, -44), (10, -44), (-10, 44), (10, 44),   # north/south flanks
-        (-32, -32), (32, 32), (-32, 32), (32, -32),   # inner ring
+        (-46, -26), (-46, 26), (46, -26), (46, 26),   # outer diagonals
+        (-26, -46), (26, -46), (-26, 46), (26, 46),   # outer diagonals (transposed)
+        # Inner ring (r≈30-36)
+        (-32, -32), (32, 32), (-32, 32), (32, -32),   # inner ring corners
+        (-34, -8),  (-34, 8),  (34, -8),  (34, 8),   # inner flanks
+        (-8, -34),  (8, -34),  (-8, 34),  (8, 34),   # inner flanks (transposed)
     ]
 
     for i, (tx, tz) in enumerate(trees):
