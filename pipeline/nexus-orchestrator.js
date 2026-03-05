@@ -272,8 +272,8 @@ function connectMindServer() {
     // On first state-update with position data, re-center NexusEye above agent cluster
     if (!eyebotCentered && eyeBot) {
       const positions = arr
-        .filter(s => s?.position)
-        .map(s => s.position);
+        .filter(s => s?.gameplay?.position)
+        .map(s => s.gameplay.position);
       if (positions.length > 0) {
         const cx = Math.round(positions.reduce((a, p) => a + p.x, 0) / positions.length);
         const cz = Math.round(positions.reduce((a, p) => a + p.z, 0) / positions.length);
@@ -366,12 +366,13 @@ function buildAgentContext() {
   return Object.keys(AGENT_ROLES).map(name => {
     const s = agentStates[name];
     if (!s) return `${name} (${AGENT_ROLES[name]}): no data yet`;
-    const pos = s.position
-      ? `pos=(${Math.round(s.position.x)},${Math.round(s.position.y)},${Math.round(s.position.z)})`
+    const gp = s.gameplay;
+    const pos = gp?.position
+      ? `pos=(${Math.round(gp.position.x)},${Math.round(gp.position.y)},${Math.round(gp.position.z)})`
       : 'pos=unknown';
-    const task = s.task || s.current_action || 'idle';
-    const inv = s.inventory
-      ? Object.entries(s.inventory).slice(0, 5).map(([k, v]) => `${k}×${v}`).join(', ') || 'empty'
+    const task = s.action?.current || 'idle';
+    const inv = s.inventory?.counts
+      ? Object.entries(s.inventory.counts).slice(0, 5).map(([k, v]) => `${k}×${v}`).join(', ') || 'empty'
       : 'unknown';
     return `${name} (${AGENT_ROLES[name]}): ${pos}, task="${task}", inventory=[${inv}]`;
   }).join('\n');
@@ -453,7 +454,7 @@ async function orbitEyeBot() {
   if (!eyeBot) return;
 
   // Compute centroid of all agents with known positions
-  const positions = Object.values(agentStates).filter(s => s?.position).map(s => s.position);
+  const positions = Object.values(agentStates).filter(s => s?.gameplay?.position).map(s => s.gameplay.position);
   if (positions.length === 0) return;
 
   const cx = positions.reduce((a, p) => a + p.x, 0) / positions.length;
