@@ -43,6 +43,53 @@ function log(msg) {
   try { fs.appendFileSync(OUT_LOG, line + '\n'); } catch (_) {}
 }
 
+// ── RCON helper — teleport NexusEye to elevated position ─────────────────
+function rconTeleport(x, y, z) {
+  return new Promise((resolve) => {
+    const net = require('net');
+    const RCON_HOST = '127.0.0.1';
+    const RCON_PORT = 25575;
+    const RCON_PASS = 'ailab743915';
+
+    const client = net.createConnection(RCON_PORT, RCON_HOST);
+    let buf = Buffer.alloc(0);
+
+    function buildPacket(id, type, payload) {
+      const payloadBuf = Buffer.from(payload + '\x00\x00', 'utf8');
+      const pkt = Buffer.allocUnsafe(4 + 4 + 4 + payloadBuf.length);
+      pkt.writeInt32LE(8 + payloadBuf.length, 0);
+      pkt.writeInt32LE(id, 4);
+      pkt.writeInt32LE(type, 8);
+      payloadBuf.copy(pkt, 12);
+      return pkt;
+    }
+
+    let authed = false;
+    client.on('data', (chunk) => {
+      buf = Buffer.concat([buf, chunk]);
+      while (buf.length >= 4) {
+        const len = buf.readInt32LE(0) + 4;
+        if (buf.length < len) break;
+        const type = buf.readInt32LE(8);
+        buf = buf.slice(len);
+        if (!authed) {
+          authed = true;
+          // Send tp command
+          client.write(buildPacket(2, 2, `/tp NexusEye ${Math.round(x)} ${Math.round(y + 40)} ${Math.round(z)}`));
+        } else {
+          client.end();
+          resolve();
+        }
+      }
+    });
+
+    client.on('connect', () => client.write(buildPacket(1, 3, RCON_PASS)));
+    client.on('error', (e) => { log(`[RCON] tp failed: ${e.message}`); resolve(); });
+    client.on('close', resolve);
+    setTimeout(() => { client.destroy(); resolve(); }, 5000);
+  });
+}
+
 // ── Eye-bot ───────────────────────────────────────────────────────────────
 function startEyeBot() {
   eyeBot = mineflayer.createBot({
@@ -61,6 +108,14 @@ function startEyeBot() {
     } catch (e) {
       log(`[EyeBot] Viewer failed to start: ${e.message}`);
     }
+    // Teleport to elevated position for overhead view
+    setTimeout(async () => {
+      const pos = eyeBot.entity?.position;
+      if (pos) {
+        await rconTeleport(pos.x, pos.y, pos.z);
+        log(`[EyeBot] Teleported to elevated position (Y+40)`);
+      }
+    }, 3000);
   });
 
   eyeBot.on('error', (err) => log(`[EyeBot] Error: ${err.message}`));
