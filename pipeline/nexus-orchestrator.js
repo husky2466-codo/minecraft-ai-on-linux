@@ -118,9 +118,17 @@ function startEyeBot() {
       await rconCommand('/time set day');
       log('[EyeBot] Set to spectator mode, locked time to day');
       if (pos) {
-        await rconCommand(`/tp NexusEye ${Math.round(pos.x)} ${Math.round(pos.y + 40)} ${Math.round(pos.z)}`);
-        log('[EyeBot] Teleported to overhead position (Y+40)');
+        // Y+5 just above terrain — bot looks straight down, so third-person camera
+        // places itself directly above, giving a top-down overhead view
+        await rconCommand(`/tp NexusEye ${Math.round(pos.x)} ${Math.round(pos.y + 5)} ${Math.round(pos.z)}`);
+        log('[EyeBot] Teleported to Y+5 above terrain');
       }
+      setTimeout(() => {
+        if (eyeBot) {
+          eyeBot.look(0, Math.PI / 2, false); // straight down → camera goes above
+          log('[EyeBot] Bot looking down → third-person camera overhead');
+        }
+      }, 2000);
     }, 3000);
   });
 
@@ -255,10 +263,11 @@ function connectMindServer() {
       if (positions.length > 0) {
         const cx = Math.round(positions.reduce((a, p) => a + p.x, 0) / positions.length);
         const cz = Math.round(positions.reduce((a, p) => a + p.z, 0) / positions.length);
-        const cy = Math.round(Math.max(...positions.map(p => p.y)) + 80);
+        const cy = Math.round(Math.max(...positions.map(p => p.y)) + 5);
         rconCommand(`/tp NexusEye ${cx} ${cy} ${cz}`)
           .then(() => {
-            log(`[EyeBot] Re-centered above agent cluster at (${cx}, ${cy}, ${cz})`);
+            log(`[EyeBot] Re-centered above agents at (${cx}, ${cy}, ${cz})`);
+            setTimeout(() => { if (eyeBot) eyeBot.look(0, Math.PI / 2, false); }, 1000);
             eyebotCentered = true;
           });
       }
