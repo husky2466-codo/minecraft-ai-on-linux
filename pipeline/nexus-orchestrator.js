@@ -115,7 +115,7 @@ function startEyeBot() {
     }
     // Teleport to elevated position for overhead view
     setTimeout(async () => {
-      const pos = eyeBot.entity?.position;
+      const pos = eyeBot?.entity?.position;
       if (pos) {
         await rconTeleport(pos.x, pos.y, pos.z);
         log(`[EyeBot] Teleported to elevated position (Y+40)`);
