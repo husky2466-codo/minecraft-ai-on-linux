@@ -702,8 +702,7 @@
     @media (max-width: 900px) { .orch-panels { grid-template-columns: 1fr; } }
     .orch-card { display: flex; flex-direction: column; }
     .orch-feed {
-      flex: 1;
-      height: 320px;
+      max-height: 180px;
       overflow-y: auto;
       display: flex;
       flex-direction: column;
@@ -3010,6 +3009,7 @@ function maybeAppendNexusLog(source, line) {
   nexusLogBuf.push(line);
   if (nexusLogBuf.length > NEXUS_LOG_MAX) nexusLogBuf.shift();
 
+  if (box.children.length >= NEXUS_LOG_MAX) box.removeChild(box.firstChild);
   const el = document.createElement('div');
   el.className = 'log-line ' + classifyLogLine(line);
   el.textContent = line;
@@ -3032,6 +3032,8 @@ function addNexusDirective(target, message) {
   item.className = 'directive-item';
   item.innerHTML = `<span class="d-ts">${now}</span><span class="d-target">${target}</span><span class="d-msg">${message}</span>`;
   feed.appendChild(item);
+  // Keep only 4 most recent entries in the DOM
+  while (feed.children.length > 4) feed.removeChild(feed.firstChild);
   feed.scrollTop = feed.scrollHeight;
 }
 
