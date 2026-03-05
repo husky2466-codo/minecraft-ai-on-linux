@@ -14,8 +14,8 @@ const MC_PORT        = 25565;
 const VIEWER_PORT    = 3099;
 const MINDSERVER_URL = 'http://127.0.0.1:8080';
 const VISION_MODEL   = 'qwen2.5vl:7b';
-const REASON_MODEL   = 'qwen3.5:27b';
-const INTERVAL_MS    = parseInt(process.env.NEXUS_INTERVAL_MS || '120000', 10);
+const REASON_MODEL   = 'qwen2.5:7b';
+const INTERVAL_MS    = parseInt(process.env.NEXUS_INTERVAL_MS || '60000', 10);
 const MC_LOG         = path.join(process.env.HOME, 'mindcraft.log');
 
 const AGENT_ROLES = {
@@ -349,16 +349,9 @@ Issue a directive for every agent now. All five lines required.`;
         { role: 'user', content: userPrompt },
       ],
       stream: false,
-      options: { num_predict: 150, think: false },
+      options: { num_predict: 300 },
     });
-    const raw = res.message?.content?.trim() || res.message?.thinking?.trim() || '';
-    // Strip any CoT preamble — keep only lines that are actual directives (AgentName: text)
-    const known = new Set(Object.keys(AGENT_ROLES));
-    const directiveLines = raw.split('\n').filter(l => {
-      const m = l.match(/^([A-Za-z]+):\s*.+/);
-      return m && known.has(m[1]);
-    });
-    return directiveLines.length > 0 ? directiveLines.join('\n') : raw;
+    return res.message?.content?.trim() || '';
   } catch (e) {
     log(`[Reason] Error: ${e.message}`);
     return '';
