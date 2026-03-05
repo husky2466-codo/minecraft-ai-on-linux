@@ -175,7 +175,7 @@ function checkPhase(agentStates) {
 }
 
 // ── getBottlenecks ────────────────────────────────────────────────────────
-// Returns unmet thresholds for current phase, sorted easiest-gap-first.
+// Returns unmet thresholds for current phase, sorted by ascending gap ratio (closest-to-threshold first).
 
 function getBottlenecks(phaseIndex, agentStates) {
   const phase = PHASES[phaseIndex];
