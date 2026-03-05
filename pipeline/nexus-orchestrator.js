@@ -42,7 +42,7 @@ function log(msg) {
 }
 
 // ── RCON helper — teleport NexusEye to elevated position ─────────────────
-function rconTeleport(x, y, z) {
+function rconCommand(command) {
   return new Promise((resolve) => {
     const RCON_HOST = '127.0.0.1';
     const RCON_PORT = 25575;
@@ -77,7 +77,7 @@ function rconTeleport(x, y, z) {
             return;
           }
           authed = true;
-          client.write(buildPacket(2, 2, `/tp NexusEye ${Math.round(x)} ${Math.round(y + 40)} ${Math.round(z)}`));
+          client.write(buildPacket(2, 2, command));
         } else {
           client.end();
           resolve();
@@ -86,7 +86,7 @@ function rconTeleport(x, y, z) {
     });
 
     client.on('connect', () => client.write(buildPacket(1, 3, RCON_PASS)));
-    client.on('error', (e) => { log(`[RCON] tp failed: ${e.message}`); resolve(); });
+    client.on('error', (e) => { log(`[RCON] Command failed: ${e.message}`); resolve(); });
     client.on('close', resolve);
     setTimeout(() => { client.destroy(); resolve(); }, 5000);
   });
@@ -110,12 +110,14 @@ function startEyeBot() {
     } catch (e) {
       log(`[EyeBot] Viewer failed to start: ${e.message}`);
     }
-    // Teleport to elevated position for overhead view
+    // Set spectator mode so NexusEye floats and is invisible, then teleport up
     setTimeout(async () => {
       const pos = eyeBot?.entity?.position;
+      await rconCommand('/gamemode spectator NexusEye');
+      log('[EyeBot] Set to spectator mode (invisible, floating)');
       if (pos) {
-        await rconTeleport(pos.x, pos.y, pos.z);
-        log(`[EyeBot] Teleported to elevated position (Y+40)`);
+        await rconCommand(`/tp NexusEye ${Math.round(pos.x)} ${Math.round(pos.y + 40)} ${Math.round(pos.z)}`);
+        log('[EyeBot] Teleported to elevated position (Y+40)');
       }
     }, 3000);
   });
