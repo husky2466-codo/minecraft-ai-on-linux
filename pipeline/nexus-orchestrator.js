@@ -432,46 +432,56 @@ function buildAgentContext() {
   }).join('\n');
 }
 
-async function getDirectives(visualDescription, recentLogs, agentMemories = '', taskState = {}) {
+async function getDirectives(visualDescription, recentLogs, agentMemories = '', taskState = {}, phaseBrief = {}) {
   const agentCtx = buildAgentContext();
-  const goals = taskState.goals || {};
-  const lastDirectives = taskState.lastDirectives || {};
+  const { phaseName = 'Unknown', phaseFocus = '', bottlenecks = [], assignments = {} } = phaseBrief;
 
-  // Build per-agent goal context line
-  const goalLines = Object.keys(AGENT_ROLES).map(name => {
-    const g = goals[name] || 'No current plan — assign an appropriate starting task';
-    const last = lastDirectives[name] ? ` | last directive: "${lastDirectives[name]}"` : '';
-    return `  ${name}: ${g}${last}`;
+  // Build assignment block for LLM
+  const assignmentBlock = Object.entries(assignments).map(([name, a]) => {
+    return `  ${name}: ${a.task.toUpperCase()} → ${a.target} | ${a.hint}`;
   }).join('\n');
 
-  const systemPrompt = `You are Nexus — the AI project manager for a 5-agent Minecraft team. You observe every 90 seconds and issue work orders like a hands-on foreman.
+  // Build bottleneck status for LLM context
+  const bottleneckBlock = bottlenecks.length > 0
+    ? bottlenecks.map(b => `  ${b.label}: have ${b.have}, need ${b.need} (gap: ${b.gap})`).join('\n')
+    : '  All phase thresholds met — consolidate and prepare for next phase.';
 
-CORE RULE: Continuity over novelty. A build in progress gets finished. A farm gets tended. Goals persist until complete.
-Only change a GOAL when: (1) it is clearly finished, or (2) an emergency overrides it (threat, starvation, broken tools).
-Every DIRECTIVE must be a concrete next step that advances the agent's current GOAL — not a pivot to something new.
+  const systemPrompt = `You are Nexus — the AI foreman for a 5-agent Minecraft survival team.
 
-Output EXACTLY two labeled sections, all five agents each:
+The phase engine has already decided what each agent does this tick. Your ONLY job is to write each agent's directive as a natural, specific command using their assigned task. Do NOT change assignments. Do NOT assign different tasks. Translate assignments into directives.
 
+DIRECTIVE RULES:
+- Each directive must be ≤25 words
+- Include at least one MindCraft command (!searchForBlock, !craftRecipe, !smeltItem, !tillAndSow, !equip, !attack, !goToCoordinates, etc.)
+- Sound like a foreman giving a direct work order
+- Reference the specific target item or action from the assignment
+- Vex always guards — her directive should name who she's protecting or where to patrol
+
+Output EXACTLY this format (no extra text):
 GOALS:
-Rook: [one-sentence multi-step goal, unchanged if still in progress]
+Rook: [one-sentence goal for this phase, carry forward if unchanged]
 Vex: [goal]
 Drift: [goal]
 Echo: [goal]
 Sage: [goal]
 
 DIRECTIVES:
-Rook: [specific action this cycle, ≤20 words, that moves their goal forward]
-Vex: [directive]
-Drift: [directive]
-Echo: [directive]
-Sage: [directive]`;
+Rook: [directive with MindCraft command]
+Vex: [directive with MindCraft command]
+Drift: [directive with MindCraft command]
+Echo: [directive with MindCraft command]
+Sage: [directive with MindCraft command]`;
 
-  const memSection = agentMemories
-    ? `\nAGENT LONG-TERM MEMORIES:\n${agentMemories}\n`
-    : '';
+  const memSection = agentMemories ? `\nAGENT MEMORIES:\n${agentMemories}\n` : '';
 
-  const userPrompt = `CURRENT AGENT GOALS (carry these forward unless complete):
-${goalLines}
+  const userPrompt = `CURRENT PHASE: ${taskState.phase}/9 — ${phaseName}
+PHASE FOCUS: ${phaseFocus}
+
+BOTTLENECK STATUS (what's blocking phase completion):
+${bottleneckBlock}
+
+AGENT ASSIGNMENTS (from phase engine — do not change):
+${assignmentBlock}
 
 VISUAL SNAPSHOT:
 ${visualDescription}
@@ -482,17 +492,17 @@ ${agentCtx}
 RECENT LOG (last 50 lines):
 ${recentLogs.slice(-2000)}
 
-Output GOALS then DIRECTIVES for all five agents now.`;
+Write GOALS then DIRECTIVES now.`;
 
   try {
     const res = await ollamaPost('/api/chat', {
       model: REASON_MODEL,
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
+        { role: 'user',   content: userPrompt },
       ],
       stream: false,
-      options: { num_predict: 450 },
+      options: { num_predict: 500 },
     });
     const raw = res.message?.content?.trim() || '';
     log(`[Reason] Response:\n${raw}`);
