@@ -1,0 +1,12 @@
+{
+  "name": "nexus-pipeline",
+  "version": "1.0.0",
+  "description": "Nexus orchestrator and supporting pipeline processes",
+  "type": "commonjs",
+  "dependencies": {
+    "mineflayer": "^4.23.0",
+    "prismarine-viewer": "^1.28.0",
+    "puppeteer": "^22.0.0",
+    "socket.io-client": "^4.7.5"
+  }
+}
