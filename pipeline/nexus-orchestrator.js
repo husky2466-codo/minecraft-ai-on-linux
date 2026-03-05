@@ -17,7 +17,6 @@ const VISION_MODEL   = 'qwen2.5vl:7b';
 const REASON_MODEL   = 'qwen3.5:27b';
 const INTERVAL_MS    = parseInt(process.env.NEXUS_INTERVAL_MS || '60000', 10);
 const MC_LOG         = path.join(process.env.HOME, 'mindcraft.log');
-const OUT_LOG        = path.join(process.env.HOME, 'nexus-orchestrator.log');
 
 const AGENT_ROLES = {
   Rook:  'gatherer — mines resources and fills storage chests',
@@ -39,9 +38,7 @@ let msSocket    = null;
 
 // ── Logging ───────────────────────────────────────────────────────────────
 function log(msg) {
-  const line = `[${new Date().toISOString()}] ${msg}`;
-  console.log(line);
-  try { fs.appendFileSync(OUT_LOG, line + '\n'); } catch (_) {}
+  console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
 // ── RCON helper — teleport NexusEye to elevated position ─────────────────
