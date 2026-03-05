@@ -18,7 +18,7 @@ app.use(express.json());
 app.use(express.static(join(__dirname, 'public')));
 
 const MINDCRAFT_PATH = '/home/myroproductions/Projects/minecraft-ai-on-linux/mindcraft';
-const CHROMA_COLLECTIONS = ['rook_memory', 'vex_memory', 'sage_memory', 'echo_memory', 'drift_memory'];
+const CHROMA_COLLECTIONS = ['rook_memory', 'vex_memory', 'sage_memory', 'echo_memory', 'drift_memory', 'nexus_memory'];
 // Returns current live agent names from MindServer (falls back to all known if empty)
 function liveAgentNames() { return agentList.map(a => a.name); }
 function isValidAgentName(name) { return /^[A-Za-z][A-Za-z0-9_-]{0,31}$/.test(name); }

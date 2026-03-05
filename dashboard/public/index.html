@@ -995,25 +995,27 @@ ssh nmyers@10.0.0.69           # My DGX Spark</div>
 let AGENTS = []; // populated dynamically from agents-status events
 
 const AGENT_COLORS = {
-  Rook: '#e57373',
-  Vex:  '#ff8a65',
-  Sage: '#81c784',
-  Echo: '#64b5f6',
-  Drift:'#ce93d8',
+  Rook:  '#e57373',
+  Vex:   '#ff8a65',
+  Sage:  '#81c784',
+  Echo:  '#64b5f6',
+  Drift: '#ce93d8',
+  Nexus: '#fff176',
 };
 
 const AGENT_FOCUS = {
-  Rook:  'builder',
+  Rook:  'gatherer',
   Vex:   'fighter',
   Sage:  'engineer',
   Echo:  'diplomat',
   Drift: 'explorer',
+  Nexus: 'orchestrator',
 };
 
 // Fallback palette for agents not in the hardcoded maps
 const AGENT_COLOR_PALETTE = ['#e57373','#ff8a65','#81c784','#64b5f6','#ce93d8','#fff176','#80deea','#ffcc80'];
 function agentColor(name) {
-  return agentColor(name) || AGENT_COLOR_PALETTE[AGENTS.indexOf(name) % AGENT_COLOR_PALETTE.length] || '#8890b0';
+  return AGENT_COLORS[name] || AGENT_COLOR_PALETTE[AGENTS.indexOf(name) % AGENT_COLOR_PALETTE.length] || '#8890b0';
 }
 function agentFocus(name) {
   return AGENT_FOCUS[name] || 'agent';
@@ -1212,21 +1214,24 @@ function agentCardHtml(name, state) {
   const focus = agentFocus(name);
   const online = state && state.online;
 
-  const hp = state ? Math.max(0, Math.min(100, (state.health || 0) / 20 * 100)) : 0;
-  const hunger = state ? Math.max(0, Math.min(100, (state.foodLevel || state.hunger || 0) / 20 * 100)) : 0;
+  const gp = state?.gameplay;
+  const hp = gp ? Math.max(0, Math.min(100, (gp.health || 0) / 20 * 100)) : 0;
+  const hunger = gp ? Math.max(0, Math.min(100, (gp.hunger || 0) / 20 * 100)) : 0;
 
-  const pos = state && state.position
-    ? `X:${Math.round(state.position.x)} Y:${Math.round(state.position.y)} Z:${Math.round(state.position.z)}`
+  const pos = gp?.position
+    ? `X:${Math.round(gp.position.x)} Y:${Math.round(gp.position.y)} Z:${Math.round(gp.position.z)}`
     : 'X:— Y:— Z:—';
 
-  const action = state && state.action ? state.action : (online ? 'idle' : 'offline');
-  const biome = state && state.biome ? state.biome : '—';
-  const nearby = state && state.nearbyPlayers && state.nearbyPlayers.length
-    ? state.nearbyPlayers.join(', ')
-    : 'none';
+  const action = state?.action?.current || (online ? 'idle' : 'offline');
+  const biome = gp?.biome || '—';
+  const nearbyHumans = state?.nearby?.humanPlayers || [];
+  const nearbyBots = state?.nearby?.botPlayers || [];
+  const nearbyAll = [...nearbyHumans, ...nearbyBots];
+  const nearby = nearbyAll.length ? nearbyAll.join(', ') : 'none';
 
-  const inv = state && state.inventory && state.inventory.length
-    ? state.inventory.slice(0, 6).map(i => `${i.name}x${i.count}`).join(', ')
+  const invCounts = state?.inventory?.counts;
+  const inv = invCounts && Object.keys(invCounts).length
+    ? Object.entries(invCounts).slice(0, 6).map(([n, c]) => `${n}x${c}`).join(', ')
     : '—';
 
   return `
@@ -1239,9 +1244,9 @@ function agentCardHtml(name, state) {
       <div class="focus-badge">${focus}</div>
       <div class="agent-pos">${escHtml(pos)}</div>
       <div class="agent-action">${escHtml(action)}</div>
-      <div class="bar-label"><span>HP</span><span>${state ? (state.health || 0).toFixed(0) + '/20' : '—'}</span></div>
+      <div class="bar-label"><span>HP</span><span>${gp ? (gp.health || 0).toFixed(0) + '/20' : '—'}</span></div>
       <div class="bar-track"><div class="bar-fill bar-health" style="width:${hp}%"></div></div>
-      <div class="bar-label"><span>Hunger</span><span>${state ? (state.foodLevel || state.hunger || 0).toFixed(0) + '/20' : '—'}</span></div>
+      <div class="bar-label"><span>Hunger</span><span>${gp ? (gp.hunger || 0).toFixed(0) + '/20' : '—'}</span></div>
       <div class="bar-track"><div class="bar-fill bar-hunger" style="width:${hunger}%"></div></div>
       <div class="agent-inventory">Inv: ${escHtml(inv)}</div>
       <div class="agent-biome">Biome: ${escHtml(biome)}</div>
@@ -1344,8 +1349,8 @@ function drawMap() {
 
   // Collect visible agent positions
   const positions = AGENTS
-    .filter(n => agentData[n] && agentData[n].position)
-    .map(n => ({ name: n, ...agentData[n].position, color: agentColor(n) }));
+    .filter(n => agentData[n] && agentData[n].gameplay?.position)
+    .map(n => ({ name: n, ...agentData[n].gameplay.position, color: agentColor(n) }));
 
   // Compute bounds
   let minX, maxX, minZ, maxZ;
@@ -1459,8 +1464,8 @@ function updateMapLegend(positions) {
   const legend = document.getElementById('map-legend');
   legend.innerHTML = AGENTS.map(name => {
     const p = agentData[name];
-    const pos = p && p.position
-      ? `X:${Math.round(p.position.x)} Y:${Math.round(p.position.y)} Z:${Math.round(p.position.z)}`
+    const pos = p?.gameplay?.position
+      ? `X:${Math.round(p.gameplay.position.x)} Y:${Math.round(p.gameplay.position.y)} Z:${Math.round(p.gameplay.position.z)}`
       : 'offline';
     return `<div class="legend-item">
       <div class="legend-dot" style="background:${agentColor(name)}"></div>
