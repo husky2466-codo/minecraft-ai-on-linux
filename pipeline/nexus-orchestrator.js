@@ -15,6 +15,19 @@ const {
   getNearestUnexplored, // reserved — used in Phase 8 Cave Exploration directives
 } = require('./nexus-phase-engine');
 
+// ── Global error guard ────────────────────────────────────────────────────
+// prismarine-viewer throws async EADDRINUSE if port 3099 is busy — catch it
+// here to prevent process crash; the loop still runs without the viewer.
+process.on('uncaughtException', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`[EyeBot] Viewer port ${err.port || 3099} already in use — skipping viewer`);
+    viewerStarted = true; // prevent retries
+  } else {
+    console.error('[FATAL] Uncaught exception:', err);
+    process.exit(1);
+  }
+});
+
 // ── Config ────────────────────────────────────────────────────────────────
 const MC_HOST        = '127.0.0.1';
 const MC_PORT        = 25565;
