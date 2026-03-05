@@ -6,6 +6,7 @@ const { io } = require('socket.io-client');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const net = require('net');
 
 // ── Config ────────────────────────────────────────────────────────────────
 const MC_HOST        = '127.0.0.1';
@@ -46,10 +47,9 @@ function log(msg) {
 // ── RCON helper — teleport NexusEye to elevated position ─────────────────
 function rconTeleport(x, y, z) {
   return new Promise((resolve) => {
-    const net = require('net');
     const RCON_HOST = '127.0.0.1';
     const RCON_PORT = 25575;
-    const RCON_PASS = 'ailab743915';
+    const RCON_PASS = process.env.RCON_PASS || 'ailab743915';
 
     const client = net.createConnection(RCON_PORT, RCON_HOST);
     let buf = Buffer.alloc(0);
@@ -70,11 +70,16 @@ function rconTeleport(x, y, z) {
       while (buf.length >= 4) {
         const len = buf.readInt32LE(0) + 4;
         if (buf.length < len) break;
-        const type = buf.readInt32LE(8);
-        buf = buf.slice(len);
+        const responseId = buf.readInt32LE(4);
+        buf = buf.subarray(len);
         if (!authed) {
+          if (responseId === -1) {
+            log('[RCON] Authentication failed — check RCON password');
+            client.destroy();
+            resolve();
+            return;
+          }
           authed = true;
-          // Send tp command
           client.write(buildPacket(2, 2, `/tp NexusEye ${Math.round(x)} ${Math.round(y + 40)} ${Math.round(z)}`));
         } else {
           client.end();
@@ -145,6 +150,12 @@ async function startBrowser() {
     await new Promise(r => setTimeout(r, 8000));
     await page.goto(`http://127.0.0.1:${VIEWER_PORT}`, { waitUntil: 'networkidle0', timeout: 30000 });
     log('[Puppeteer] Viewer page loaded');
+    browser.on('disconnected', () => {
+      log('[Puppeteer] Browser disconnected — restarting in 15s');
+      browser = null;
+      page = null;
+      setTimeout(startBrowser, 15_000);
+    });
   } catch (e) {
     log(`[Puppeteer] Failed to start: ${e.message}`);
     browser = null;
@@ -174,7 +185,7 @@ function ollamaPost(endpoint, body) {
       path: endpoint,
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Content-Length': data.length },
-      timeout: 120_000,
+      timeout: 180_000,
     }, (res) => {
       let raw = '';
       res.on('data', c => raw += c);
@@ -238,8 +249,15 @@ function connectMindServer() {
 // ── Log tail ──────────────────────────────────────────────────────────────
 function readLastLines(filePath, n = 50) {
   try {
-    const content = fs.readFileSync(filePath, 'utf8');
-    const lines = content.split('\n').filter(Boolean);
+    const MAX_BYTES = 32 * 1024;
+    const stat = fs.statSync(filePath);
+    if (stat.size === 0) return '';
+    const readBytes = Math.min(stat.size, MAX_BYTES);
+    const buf = Buffer.allocUnsafe(readBytes);
+    const fd = fs.openSync(filePath, 'r');
+    fs.readSync(fd, buf, 0, readBytes, stat.size - readBytes);
+    fs.closeSync(fd);
+    const lines = buf.toString('utf8').split('\n').filter(Boolean);
     return lines.slice(-n).join('\n');
   } catch (_) {
     return '';
@@ -375,5 +393,16 @@ if (require.main === module) {
 
     setTimeout(runLoop, 5_000);
     setInterval(runLoop, INTERVAL_MS);
+
+    // Graceful shutdown
+    async function shutdown(signal) {
+      log(`[Shutdown] Received ${signal} — cleaning up`);
+      if (browser) await browser.close().catch(() => {});
+      if (eyeBot) eyeBot.end('shutdown');
+      if (msSocket) msSocket.disconnect();
+      process.exit(0);
+    }
+    process.on('SIGINT', () => shutdown('SIGINT'));
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
   })();
 }
