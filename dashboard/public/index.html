@@ -940,6 +940,30 @@
       background: rgba(255,255,255,0.06);
     }
 
+    .drawer-tabs {
+      display: flex;
+      flex-shrink: 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .drawer-tab {
+      flex: 1;
+      padding: 10px 0;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-dim);
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .drawer-tab:hover { color: var(--text); }
+    .drawer-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
     .drawer-body {
       flex: 1;
       overflow-y: auto;
@@ -1601,89 +1625,185 @@ ssh nmyers@10.0.0.69           # My DGX Spark</div>
 <!-- ===== SETTINGS DRAWER ===== -->
 <div id="settings-drawer">
   <div class="drawer-titlebar">
-    <div class="drawer-title">&#9881; Simulation Settings</div>
+    <div class="drawer-title">&#9881; Settings</div>
     <button class="drawer-close" onclick="closeSettingsDrawer()" title="Close">&times;</button>
   </div>
+
+  <!-- Top-level tab bar -->
+  <div class="drawer-tabs">
+    <button class="drawer-tab active" id="dtab-sim" onclick="switchDrawerTab('sim')">Simulation</button>
+    <button class="drawer-tab" id="dtab-world" onclick="switchDrawerTab('world')">Minecraft World</button>
+  </div>
+
   <div class="drawer-body">
 
-    <!-- 1. ORCHESTRATOR -->
-    <div class="drawer-section" id="ds-orchestrator">
-      <div class="drawer-section-header" onclick="toggleDrawerSection('ds-orchestrator')">
-        <span class="drawer-section-label">Orchestrator</span>
-        <span class="drawer-section-arrow">&#9660;</span>
-      </div>
-      <div class="drawer-section-body">
-        <div>
-          <div class="drawer-row-label">Loop Interval</div>
-          <div class="interval-presets">
-            <div class="interval-chip" data-secs="15" onclick="setIntervalPreset(15)">15s</div>
-            <div class="interval-chip" data-secs="30" onclick="setIntervalPreset(30)">30s</div>
-            <div class="interval-chip" data-secs="45" onclick="setIntervalPreset(45)">45s</div>
-            <div class="interval-chip active" data-secs="60" onclick="setIntervalPreset(60)">60s</div>
-            <div class="interval-chip" data-secs="90" onclick="setIntervalPreset(90)">90s</div>
+    <!-- ====== SIMULATION PANEL ====== -->
+    <div id="drawer-panel-sim">
+
+      <!-- 1. ORCHESTRATOR -->
+      <div class="drawer-section" id="ds-orchestrator">
+        <div class="drawer-section-header" onclick="toggleDrawerSection('ds-orchestrator')">
+          <span class="drawer-section-label">Orchestrator</span>
+          <span class="drawer-section-arrow">&#9660;</span>
+        </div>
+        <div class="drawer-section-body">
+          <div>
+            <div class="drawer-row-label">Loop Interval</div>
+            <div class="interval-presets">
+              <div class="interval-chip" data-secs="15" onclick="setIntervalPreset(15)">15s</div>
+              <div class="interval-chip" data-secs="30" onclick="setIntervalPreset(30)">30s</div>
+              <div class="interval-chip" data-secs="45" onclick="setIntervalPreset(45)">45s</div>
+              <div class="interval-chip active" data-secs="60" onclick="setIntervalPreset(60)">60s</div>
+              <div class="interval-chip" data-secs="90" onclick="setIntervalPreset(90)">90s</div>
+            </div>
+            <div class="drawer-input-row">
+              <input type="number" id="orch-interval-custom" value="60" min="5" max="600" style="width:80px;" />
+              <span style="font-size:12px; color:var(--text-dim);">seconds</span>
+            </div>
           </div>
-          <div class="drawer-input-row">
-            <input type="number" id="orch-interval-custom" value="60" min="5" max="600" style="width:80px;" />
-            <span style="font-size:12px; color:var(--text-dim);">seconds</span>
+          <div>
+            <div class="drawer-row-label">Vision Model</div>
+            <input type="text" id="orch-vision-model" value="qwen2.5vl:7b" style="width:100%;" />
+          </div>
+          <div>
+            <div class="drawer-row-label">Reason Model</div>
+            <input type="text" id="orch-reason-model" value="qwen2.5:7b" style="width:100%;" />
+          </div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn btn-accent btn-sm" onclick="applyOrchConfig()">Apply Config</button>
+            <button class="btn btn-orange btn-sm" onclick="restartOrchestrator()">&#8635; Restart Orchestrator</button>
+          </div>
+          <div id="orch-config-result" class="drawer-result-area" style="display:none;"></div>
+        </div>
+      </div>
+
+      <!-- 2. STACK CONTROL -->
+      <div class="drawer-section" id="ds-stack">
+        <div class="drawer-section-header" onclick="toggleDrawerSection('ds-stack')">
+          <span class="drawer-section-label">Stack Control</span>
+          <span class="drawer-section-arrow">&#9660;</span>
+        </div>
+        <div class="drawer-section-body">
+          <div class="drawer-stack-btns">
+            <button class="btn btn-green" onclick="drawerStackControl('start')">&#9654; Start All</button>
+            <button class="btn btn-red" onclick="drawerStackControl('stop')">&#9632; Stop All</button>
+            <button class="btn btn-orange" onclick="drawerStackControl('restart')">&#8635; Restart All</button>
+          </div>
+          <div id="drawer-stack-result" class="drawer-result-area" style="display:none;"></div>
+        </div>
+      </div>
+
+      <!-- 3. AGENTS -->
+      <div class="drawer-section" id="ds-agents">
+        <div class="drawer-section-header" onclick="toggleDrawerSection('ds-agents')">
+          <span class="drawer-section-label">Agents</span>
+          <span class="drawer-section-arrow">&#9660;</span>
+        </div>
+        <div class="drawer-section-body">
+          <div class="drawer-agent-tabs" id="drawer-agent-tabs">
+            <!-- Built by JS -->
+          </div>
+          <div id="drawer-agent-panel">
+            <!-- Built by JS -->
           </div>
         </div>
-        <div>
-          <div class="drawer-row-label">Vision Model</div>
-          <input type="text" id="orch-vision-model" value="qwen2.5vl:7b" style="width:100%;" />
-        </div>
-        <div>
-          <div class="drawer-row-label">Reason Model</div>
-          <input type="text" id="orch-reason-model" value="qwen2.5:7b" style="width:100%;" />
-        </div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap;">
-          <button class="btn btn-accent btn-sm" onclick="applyOrchConfig()">Apply Config</button>
-          <button class="btn btn-orange btn-sm" onclick="restartOrchestrator()">&#8635; Restart Orchestrator</button>
-        </div>
-        <div id="orch-config-result" class="drawer-result-area" style="display:none;"></div>
       </div>
-    </div>
 
-    <!-- 2. STACK CONTROL -->
-    <div class="drawer-section" id="ds-stack">
-      <div class="drawer-section-header" onclick="toggleDrawerSection('ds-stack')">
-        <span class="drawer-section-label">Stack Control</span>
-        <span class="drawer-section-arrow">&#9660;</span>
-      </div>
-      <div class="drawer-section-body">
-        <div class="drawer-stack-btns">
-          <button class="btn btn-green" onclick="drawerStackControl('start')">&#9654; Start All</button>
-          <button class="btn btn-red" onclick="drawerStackControl('stop')">&#9632; Stop All</button>
-          <button class="btn btn-orange" onclick="drawerStackControl('restart')">&#8635; Restart All</button>
+      <!-- 4. MEMORY -->
+      <div class="drawer-section" id="ds-memory">
+        <div class="drawer-section-header" onclick="toggleDrawerSection('ds-memory')">
+          <span class="drawer-section-label">Memory</span>
+          <span class="drawer-section-arrow">&#9660;</span>
         </div>
-        <div id="drawer-stack-result" class="drawer-result-area" style="display:none;"></div>
+        <div class="drawer-section-body">
+          <div>
+            <div class="drawer-row-label">History Retention (days)</div>
+            <div class="drawer-input-row">
+              <input type="number" id="mem-retention-days" value="7" min="1" max="365" style="width:80px;" />
+              <span style="font-size:11px; color:var(--text-dim);">(applied at next chunk save)</span>
+            </div>
+          </div>
+          <div>
+            <div class="drawer-row-label">Memory Cap (chars)</div>
+            <div class="drawer-input-row">
+              <input type="number" id="mem-cap-chars" value="1500" min="100" max="50000" style="width:100px;" />
+              <span style="font-size:11px; color:var(--text-dim);">(applied at next chunk save)</span>
+            </div>
+          </div>
+          <button class="btn btn-accent btn-sm" onclick="applyMemoryConfig()">Apply Memory Config</button>
+          <div>
+            <div class="drawer-row-label">Clear Agent Memory</div>
+            <div class="drawer-input-row">
+              <select id="mem-clear-agent" style="flex:1;">
+                <option value="Rook">Rook</option>
+                <option value="Vex">Vex</option>
+                <option value="Drift">Drift</option>
+                <option value="Echo">Echo</option>
+                <option value="Sage">Sage</option>
+              </select>
+              <button class="btn btn-red btn-sm" onclick="clearAgentMemory()">Clear</button>
+            </div>
+            <div style="font-size:11px; color:var(--text-dim); margin-top:5px;">Note: memory clear is not yet implemented — agents must be restarted with cleared files manually.</div>
+          </div>
+        </div>
       </div>
-    </div>
 
-    <!-- 3. AGENTS -->
-    <div class="drawer-section" id="ds-agents">
-      <div class="drawer-section-header" onclick="toggleDrawerSection('ds-agents')">
-        <span class="drawer-section-label">Agents</span>
-        <span class="drawer-section-arrow">&#9660;</span>
-      </div>
-      <div class="drawer-section-body">
-        <div class="drawer-agent-tabs" id="drawer-agent-tabs">
-          <!-- Built by JS -->
-        </div>
-        <div id="drawer-agent-panel">
-          <!-- Built by JS -->
-        </div>
-      </div>
-    </div>
+    </div><!-- /drawer-panel-sim -->
 
-    <!-- 4. WORLD -->
-    <div class="drawer-section" id="ds-world">
-      <div class="drawer-section-header" onclick="toggleDrawerSection('ds-world')">
-        <span class="drawer-section-label">World</span>
-        <span class="drawer-section-arrow">&#9660;</span>
+    <!-- ====== WORLD PANEL ====== -->
+    <div id="drawer-panel-world" style="display:none;">
+
+      <!-- DIFFICULTY -->
+      <div class="drawer-section" id="ds-difficulty">
+        <div class="drawer-section-header" onclick="toggleDrawerSection('ds-difficulty')">
+          <span class="drawer-section-label">Difficulty</span>
+          <span class="drawer-section-arrow">&#9660;</span>
+        </div>
+        <div class="drawer-section-body">
+          <div class="world-btn-row">
+            <button class="world-btn" id="diff-peaceful" onclick="setDifficulty('peaceful')">&#9786; Peaceful</button>
+            <button class="world-btn" id="diff-easy"     onclick="setDifficulty('easy')">Easy</button>
+            <button class="world-btn" id="diff-normal"   onclick="setDifficulty('normal')">Normal</button>
+            <button class="world-btn" id="diff-hard"     onclick="setDifficulty('hard')">&#9760; Hard</button>
+          </div>
+          <div id="diff-result" class="drawer-result-area" style="margin-top:6px; display:none;"></div>
+        </div>
       </div>
-      <div class="drawer-section-body">
-        <div>
-          <div class="drawer-row-label">Time Presets</div>
+
+      <!-- PLAYER -->
+      <div class="drawer-section" id="ds-player">
+        <div class="drawer-section-header" onclick="toggleDrawerSection('ds-player')">
+          <span class="drawer-section-label">Player (DGXBobAI)</span>
+          <span class="drawer-section-arrow">&#9660;</span>
+        </div>
+        <div class="drawer-section-body">
+          <div>
+            <div class="drawer-row-label">Game Mode</div>
+            <div class="world-btn-row">
+              <button class="world-btn" id="gm-creative"  onclick="setGamemode('creative')">&#10022; Creative</button>
+              <button class="world-btn" id="gm-survival"  onclick="setGamemode('survival')">&#9876; Survival</button>
+              <button class="world-btn" id="gm-spectator" onclick="setGamemode('spectator')">&#128065; Spectator</button>
+            </div>
+          </div>
+          <div style="margin-top:10px;">
+            <div class="drawer-row-label">Quick Effects</div>
+            <div class="world-btn-row">
+              <button class="world-btn" onclick="giveEffect('regeneration', 99999, 4)">&#10084; Regen</button>
+              <button class="world-btn" onclick="giveEffect('saturation', 99999, 4)">&#127859; Full</button>
+              <button class="world-btn" onclick="clearEffects()">&#10006; Clear</button>
+            </div>
+          </div>
+          <div id="player-result" class="drawer-result-area" style="margin-top:6px; display:none;"></div>
+        </div>
+      </div>
+
+      <!-- TIME -->
+      <div class="drawer-section" id="ds-time">
+        <div class="drawer-section-header" onclick="toggleDrawerSection('ds-time')">
+          <span class="drawer-section-label">Time</span>
+          <span class="drawer-section-arrow">&#9660;</span>
+        </div>
+        <div class="drawer-section-body">
           <div class="world-btn-row">
             <button class="world-btn" onclick="worldTime(1000)">&#9728; Day</button>
             <button class="world-btn" onclick="worldTime(13000)">&#127769; Night</button>
@@ -1691,25 +1811,52 @@ ssh nmyers@10.0.0.69           # My DGX Spark</div>
             <button class="world-btn" onclick="worldTime(6000)">&#127751; Dusk</button>
           </div>
         </div>
-        <div>
-          <div class="drawer-row-label">Weather</div>
+      </div>
+
+      <!-- WEATHER -->
+      <div class="drawer-section" id="ds-weather">
+        <div class="drawer-section-header" onclick="toggleDrawerSection('ds-weather')">
+          <span class="drawer-section-label">Weather</span>
+          <span class="drawer-section-arrow">&#9660;</span>
+        </div>
+        <div class="drawer-section-body">
           <div class="world-btn-row">
-            <button class="world-btn" onclick="worldWeather('clear')">Clear</button>
-            <button class="world-btn" onclick="worldWeather('rain')">Rain</button>
-            <button class="world-btn" onclick="worldWeather('thunder')">Thunder</button>
+            <button class="world-btn" onclick="worldWeather('clear')">&#9728; Clear</button>
+            <button class="world-btn" onclick="worldWeather('rain')">&#127783; Rain</button>
+            <button class="world-btn" onclick="worldWeather('thunder')">&#9928; Thunder</button>
           </div>
         </div>
-        <div>
-          <div class="drawer-row-label">Gamerules</div>
+      </div>
+
+      <!-- GAMERULES -->
+      <div class="drawer-section" id="ds-gamerules">
+        <div class="drawer-section-header" onclick="toggleDrawerSection('ds-gamerules')">
+          <span class="drawer-section-label">Gamerules</span>
+          <span class="drawer-section-arrow">&#9660;</span>
+        </div>
+        <div class="drawer-section-body">
           <div class="toggle-chip-grid">
-            <div class="toggle-chip active" id="gr-keepInventory" onclick="toggleGamerule('keepInventory', this)">keepInventory</div>
-            <div class="toggle-chip" id="gr-doDaylightCycle" onclick="toggleGamerule('doDaylightCycle', this)">doDaylightCycle</div>
-            <div class="toggle-chip active" id="gr-doMobSpawning" onclick="toggleGamerule('doMobSpawning', this)">doMobSpawning</div>
-            <div class="toggle-chip active" id="gr-mobGriefing" onclick="toggleGamerule('mobGriefing', this)">mobGriefing</div>
+            <div class="toggle-chip active"  id="gr-keepInventory"       onclick="toggleGamerule('keepInventory', this)">keepInventory</div>
+            <div class="toggle-chip active"  id="gr-doMobSpawning"       onclick="toggleGamerule('doMobSpawning', this)">doMobSpawning</div>
+            <div class="toggle-chip active"  id="gr-doDaylightCycle"     onclick="toggleGamerule('doDaylightCycle', this)">daylightCycle</div>
+            <div class="toggle-chip active"  id="gr-doWeatherCycle"      onclick="toggleGamerule('doWeatherCycle', this)">weatherCycle</div>
+            <div class="toggle-chip active"  id="gr-mobGriefing"         onclick="toggleGamerule('mobGriefing', this)">mobGriefing</div>
+            <div class="toggle-chip active"  id="gr-doFireTick"          onclick="toggleGamerule('doFireTick', this)">fireTick</div>
+            <div class="toggle-chip active"  id="gr-naturalRegeneration" onclick="toggleGamerule('naturalRegeneration', this)">naturalRegen</div>
+            <div class="toggle-chip active"  id="gr-doImmediateRespawn"  onclick="toggleGamerule('doImmediateRespawn', this)">immediateRespawn</div>
+            <div class="toggle-chip active"  id="gr-pvp"                 onclick="toggleGamerule('pvp', this)">pvp</div>
+            <div class="toggle-chip"         id="gr-fallDamage"          onclick="toggleGamerule('fallDamage', this)">fallDamage</div>
           </div>
         </div>
-        <div>
-          <div class="drawer-row-label">Quick RCON</div>
+      </div>
+
+      <!-- QUICK RCON -->
+      <div class="drawer-section" id="ds-rcon">
+        <div class="drawer-section-header" onclick="toggleDrawerSection('ds-rcon')">
+          <span class="drawer-section-label">Quick RCON</span>
+          <span class="drawer-section-arrow">&#9660;</span>
+        </div>
+        <div class="drawer-section-body">
           <div class="drawer-input-row">
             <input type="text" id="drawer-rcon-input" placeholder="/say hello ..." style="flex:1;" />
             <button class="btn btn-accent btn-sm" onclick="sendDrawerRcon()">Send</button>
@@ -1717,46 +1864,8 @@ ssh nmyers@10.0.0.69           # My DGX Spark</div>
           <div id="drawer-rcon-result" class="drawer-result-area" style="margin-top:6px; display:none;"></div>
         </div>
       </div>
-    </div>
 
-    <!-- 5. MEMORY -->
-    <div class="drawer-section" id="ds-memory">
-      <div class="drawer-section-header" onclick="toggleDrawerSection('ds-memory')">
-        <span class="drawer-section-label">Memory</span>
-        <span class="drawer-section-arrow">&#9660;</span>
-      </div>
-      <div class="drawer-section-body">
-        <div>
-          <div class="drawer-row-label">History Retention (days)</div>
-          <div class="drawer-input-row">
-            <input type="number" id="mem-retention-days" value="7" min="1" max="365" style="width:80px;" />
-            <span style="font-size:11px; color:var(--text-dim);">(applied at next chunk save)</span>
-          </div>
-        </div>
-        <div>
-          <div class="drawer-row-label">Memory Cap (chars)</div>
-          <div class="drawer-input-row">
-            <input type="number" id="mem-cap-chars" value="1500" min="100" max="50000" style="width:100px;" />
-            <span style="font-size:11px; color:var(--text-dim);">(applied at next chunk save)</span>
-          </div>
-        </div>
-        <button class="btn btn-accent btn-sm" onclick="applyMemoryConfig()">Apply Memory Config</button>
-        <div>
-          <div class="drawer-row-label">Clear Agent Memory</div>
-          <div class="drawer-input-row">
-            <select id="mem-clear-agent" style="flex:1;">
-              <option value="Rook">Rook</option>
-              <option value="Vex">Vex</option>
-              <option value="Drift">Drift</option>
-              <option value="Echo">Echo</option>
-              <option value="Sage">Sage</option>
-            </select>
-            <button class="btn btn-red btn-sm" onclick="clearAgentMemory()">Clear</button>
-          </div>
-          <div style="font-size:11px; color:var(--text-dim); margin-top:5px;">Note: memory clear is not yet implemented — agents must be restarted with cleared files manually.</div>
-        </div>
-      </div>
-    </div>
+    </div><!-- /drawer-panel-world -->
 
   </div><!-- /drawer-body -->
 </div><!-- /settings-drawer -->
@@ -3405,6 +3514,16 @@ async function toggleDrawerMode(agentName, mode, chipEl) {
 }
 
 // =====================================================================
+//  DRAWER TAB SWITCHING
+// =====================================================================
+function switchDrawerTab(tab) {
+  document.getElementById('drawer-panel-sim').style.display   = tab === 'sim'   ? 'block' : 'none';
+  document.getElementById('drawer-panel-world').style.display = tab === 'world' ? 'block' : 'none';
+  document.getElementById('dtab-sim').classList.toggle('active',   tab === 'sim');
+  document.getElementById('dtab-world').classList.toggle('active', tab === 'world');
+}
+
+// =====================================================================
 //  4. WORLD
 // =====================================================================
 async function worldTime(ticks) {
@@ -3474,6 +3593,67 @@ document.addEventListener('DOMContentLoaded', () => {
   const drawerRconInput = document.getElementById('drawer-rcon-input');
   if (drawerRconInput) drawerRconInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendDrawerRcon(); });
 });
+
+async function rconCmd(command) {
+  return apiFetch('/api/rcon', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ command }),
+  });
+}
+
+async function setDifficulty(level) {
+  const resultEl = document.getElementById('diff-result');
+  resultEl.style.display = 'block';
+  resultEl.textContent = 'Setting...';
+  try {
+    await rconCmd(`/difficulty ${level}`);
+    // Highlight active button
+    ['peaceful','easy','normal','hard'].forEach(d => {
+      document.getElementById(`diff-${d}`)?.classList.toggle('active', d === level);
+    });
+    resultEl.textContent = `Difficulty: ${level}`;
+    toast(`Difficulty → ${level}`);
+  } catch (e) {
+    resultEl.textContent = 'Error: ' + e.message;
+    toast('RCON error: ' + e.message);
+  }
+}
+
+async function setGamemode(mode) {
+  const resultEl = document.getElementById('player-result');
+  resultEl.style.display = 'block';
+  resultEl.textContent = 'Setting...';
+  try {
+    await rconCmd(`/gamemode ${mode} DGXBobAI`);
+    ['creative','survival','spectator'].forEach(m => {
+      document.getElementById(`gm-${m}`)?.classList.toggle('active', m === mode);
+    });
+    resultEl.textContent = `DGXBobAI → ${mode}`;
+    toast(`Gamemode → ${mode}`);
+  } catch (e) {
+    resultEl.textContent = 'Error: ' + e.message;
+    toast('RCON error: ' + e.message);
+  }
+}
+
+async function giveEffect(effect, duration, amplifier) {
+  try {
+    await rconCmd(`/effect give DGXBobAI ${effect} ${duration} ${amplifier} true`);
+    toast(`Effect: ${effect}`);
+  } catch (e) {
+    toast('RCON error: ' + e.message);
+  }
+}
+
+async function clearEffects() {
+  try {
+    await rconCmd('/effect clear DGXBobAI');
+    toast('Effects cleared');
+  } catch (e) {
+    toast('RCON error: ' + e.message);
+  }
+}
 
 // =====================================================================
 //  5. MEMORY CONFIG
