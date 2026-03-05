@@ -2239,16 +2239,24 @@ function escHtml(str) {
 //  INITIAL LOAD
 // =====================================================================
 async function init() {
-  buildAgentCards();
-  buildModeControls();
   drawMap();
   initCharts();
 
-  // Load initial data
+  // Load initial data — populate AGENTS list BEFORE building cards
   try {
     const agentRes = await apiFetch('/api/agents');
+    // Seed the AGENTS array from the REST snapshot so cards build immediately
+    if (agentRes.list?.length) {
+      AGENTS = agentRes.list.map(a => a.name);
+      agentRes.list.forEach(a => {
+        agentData[a.name] = { ...agentData[a.name], online: a.in_game || a.socket_connected };
+      });
+    }
     if (agentRes.agents) handleAgentStates(agentRes.agents);
   } catch (_) {}
+
+  buildAgentCards();
+  buildModeControls();
 
   await loadMetrics();
   await loadMemory('Rook');
