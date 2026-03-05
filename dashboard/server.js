@@ -136,10 +136,13 @@ const PATH_PREFIX = 'PATH=$HOME/.nvm/versions/node/v22.22.0/bin:$HOME/.local/bin
 
 // STOP: kill MindCraft (port 8080), agent children, queue proxy, Minecraft, ChromaDB
 const STOP_CMD =
+  // Kill MindServer by port (pkill -f would self-match and kill the SSH session)
   'MCPID=$(ss -Htlnp src :8080 | grep -oP "pid=\\K[0-9]+" | head -1); ' +
   '[ -n "$MCPID" ] && kill -9 $MCPID 2>/dev/null; ' +
   'pkill -9 -f "init_agent.js" 2>/dev/null; ' +
-  'pkill -f "ollama-queue.js" 2>/dev/null; ' +
+  // Kill queue proxy by port for the same reason
+  'QPID=$(ss -Htlnp src :11435 | grep -oP "pid=\\K[0-9]+" | head -1); ' +
+  '[ -n "$QPID" ] && kill -9 $QPID 2>/dev/null; ' +
   'pkill -f "server.jar" 2>/dev/null; pkill -f "chroma run" 2>/dev/null; sleep 2; echo "Stopped"';
 
 // START: wrap the full sequence in a detached nohup bash -c so SSH exec returns immediately.
