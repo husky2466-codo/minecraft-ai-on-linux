@@ -7,6 +7,13 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const net = require('net');
+const {
+  checkPhase,
+  getBottlenecks,
+  assignAgents,
+  markVisited,
+  getNearestUnexplored,
+} = require('./nexus-phase-engine');
 
 // ── Config ────────────────────────────────────────────────────────────────
 const MC_HOST        = '127.0.0.1';
@@ -30,6 +37,12 @@ const AGENT_ROLES = {
   Echo:  'crafter — smelts ore, cooks food, crafts tools and keeps the team supplied',
   Sage:  'engineer — crafts tools, builds structures, manages inventory',
 };
+
+// Phase name lookup for milestone logging (mirrors nexus-phase-engine PHASES order)
+const PHASES_FOR_LOG = [
+  'Shelter', 'Basic Tools', 'Food Secured', 'Storage System', 'Iron Gathering',
+  'Iron Age', 'Armor and Weapons', 'Surface Secured', 'Cave Exploration', 'Nether Prep',
+];
 
 // ── State ─────────────────────────────────────────────────────────────────
 let eyeBot      = null;
@@ -61,8 +74,23 @@ function writeLiveConfig(cfg) {
 const TASK_STATE_FILE = path.join(process.env.HOME, 'nexus-task-state.json');
 
 function readTaskState() {
-  try { return JSON.parse(fs.readFileSync(TASK_STATE_FILE, 'utf8')); }
-  catch (_) { return { goals: {}, lastDirectives: {} }; }
+  try {
+    const raw = JSON.parse(fs.readFileSync(TASK_STATE_FILE, 'utf8'));
+    return {
+      phase:          raw.phase          ?? 0,
+      phaseStartedAt: raw.phaseStartedAt ?? new Date().toISOString(),
+      goals:          raw.goals          ?? {},
+      lastDirectives: raw.lastDirectives ?? {},
+      exploredChunks: raw.exploredChunks ?? [],
+      milestones:     raw.milestones     ?? [],
+    };
+  } catch (_) {
+    return {
+      phase: 0, phaseStartedAt: new Date().toISOString(),
+      goals: {}, lastDirectives: {},
+      exploredChunks: [], milestones: [],
+    };
+  }
 }
 
 function writeTaskState(state) {
@@ -589,23 +617,58 @@ async function runLoop() {
     const agentMemories = await queryAgentMemories(visual);
     if (agentMemories) log(`[Memory] Retrieved facts: ${agentMemories.split('\n').length} lines`);
 
-    // Load persistent task state (goals survive across cycles)
+    // Load persistent task state
     const taskState = readTaskState();
-    if (Object.keys(taskState.goals).length > 0) {
-      log(`[Plan] Loaded goals: ${Object.keys(taskState.goals).map(n => `${n}="${taskState.goals[n].slice(0, 40)}"`).join(', ')}`);
+
+    // ── Phase engine ──────────────────────────────────────────────────────
+    // 1. Check current phase against live inventory
+    const { phase, phaseName, phaseFocus, conditions } = checkPhase(agentStates);
+
+    // 2. Detect phase advancement and log milestones
+    if (phase > taskState.phase) {
+      const prevName = PHASES_FOR_LOG[taskState.phase] || `Phase ${taskState.phase}`;
+      log(`[Phase] *** MILESTONE: "${prevName}" complete → advancing to Phase ${phase} (${phaseName}) ***`);
+      taskState.milestones.push({
+        phase:       taskState.phase,
+        name:        prevName,
+        completedAt: new Date().toISOString(),
+      });
+      taskState.phaseStartedAt = new Date().toISOString();
     }
 
-    const { directives, updatedGoals } = await getDirectives(visual, recentLogs, agentMemories, taskState);
+    // 3. Emergency regression: if Phase 8+ and armor count drops below 10, regress to Phase 6
+    const armorCondition = conditions.find(c => c.label === 'armor equipped');
+    const armorCount = armorCondition ? armorCondition.have : null;
+    if (phase >= 8 && armorCount !== null && armorCount < 10) {
+      log(`[Phase] EMERGENCY: armor count ${armorCount} < 10 — regressing to Phase 6 (Armor and Weapons)`);
+      taskState.phase = 6;
+    } else {
+      taskState.phase = phase;
+    }
 
-    // Persist updated goals and last directives for next cycle
+    // 4. Get bottlenecks and dynamic agent assignments from phase engine
+    const bottlenecks = getBottlenecks(taskState.phase, agentStates);
+    const assignments = assignAgents(bottlenecks, agentStates, taskState.phase);
+
+    // 5. Update exploration tracker from current agent positions
+    taskState.exploredChunks = markVisited(agentStates, taskState.exploredChunks);
+
+    log(`[Phase] ${phaseName} (${taskState.phase}/9) | bottlenecks: ${bottlenecks.map(b => `${b.label} ${b.have}/${b.need}`).join(', ') || 'none'}`);
+    log(`[Phase] Assignments: ${Object.entries(assignments).map(([n, a]) => `${n}=${a.task}:${a.target}`).join(', ')}`);
+
+    const phaseBrief = { phaseName, phaseFocus, bottlenecks, assignments };
+    const { directives, updatedGoals } = await getDirectives(visual, recentLogs, agentMemories, taskState, phaseBrief);
+
+    // Persist updated state
     const lastDirectives = {};
     directives.forEach(d => { lastDirectives[d.agent] = d.message; });
     writeTaskState({
-      goals: { ...taskState.goals, ...updatedGoals },
+      ...taskState,
+      goals:          { ...taskState.goals, ...updatedGoals },
       lastDirectives: { ...taskState.lastDirectives, ...lastDirectives },
     });
     if (Object.keys(updatedGoals).length > 0) {
-      log(`[Plan] Goals updated: ${Object.keys(updatedGoals).map(n => `${n}="${updatedGoals[n].slice(0, 40)}"`).join(', ')}`);
+      log(`[Phase] Goals updated: ${Object.keys(updatedGoals).map(n => `${n}="${updatedGoals[n].slice(0, 40)}"`).join(', ')}`);
     }
 
     if (directives.length === 0) {
