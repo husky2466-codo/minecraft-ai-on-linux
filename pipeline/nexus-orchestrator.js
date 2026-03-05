@@ -47,6 +47,15 @@ function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
+// ── Live config (hot-reloaded each tick) ──────────────────────────────────
+const CONFIG_FILE = path.join(process.env.HOME, 'nexus-config.json');
+function readLiveConfig() {
+  try { return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch (_) { return {}; }
+}
+function writeLiveConfig(cfg) {
+  try { fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2)); } catch (_) {}
+}
+
 // ── RCON helper — teleport NexusEye to elevated position ─────────────────
 function rconCommand(command) {
   return new Promise((resolve) => {
@@ -577,13 +586,7 @@ if (require.main === module) {
 
     // Self-scheduling loop — reads intervalMs from live config on each tick
     // so the dashboard can change it without restarting the process
-    const CONFIG_FILE = path.join(process.env.HOME, 'nexus-config.json');
-    function readLiveConfig() {
-      try { return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch (_) { return {}; }
-    }
-    function writeLiveConfig(cfg) {
-      try { fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2)); } catch (_) {}
-    }
+
     // Write default config if file doesn't exist
     if (!fs.existsSync(CONFIG_FILE)) {
       writeLiveConfig({ intervalMs: INTERVAL_MS, visionModel: VISION_MODEL, reasonModel: REASON_MODEL });
