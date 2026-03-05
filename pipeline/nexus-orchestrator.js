@@ -135,6 +135,7 @@ function startEyeBot() {
 // ── Puppeteer setup ───────────────────────────────────────────────────────
 async function startBrowser() {
   try {
+    if (browser) { try { await browser.close(); } catch (_) {} }
     browser = await puppeteer.launch({
       headless: true,
       args: [
@@ -147,8 +148,11 @@ async function startBrowser() {
     });
     page = await browser.newPage();
     await page.setViewport({ width: 854, height: 480 });
-    await new Promise(r => setTimeout(r, 8000));
-    await page.goto(`http://127.0.0.1:${VIEWER_PORT}`, { waitUntil: 'networkidle0', timeout: 30000 });
+    // Give prismarine-viewer extra time to spin up its WebGL scene before navigating
+    await new Promise(r => setTimeout(r, 15_000));
+    await page.goto(`http://127.0.0.1:${VIEWER_PORT}`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    // Additional wait for WebGL canvas to render first frame
+    await new Promise(r => setTimeout(r, 5_000));
     log('[Puppeteer] Viewer page loaded');
     browser.on('disconnected', () => {
       log('[Puppeteer] Browser disconnected — restarting in 15s');
@@ -157,9 +161,10 @@ async function startBrowser() {
       setTimeout(startBrowser, 15_000);
     });
   } catch (e) {
-    log(`[Puppeteer] Failed to start: ${e.message}`);
+    log(`[Puppeteer] Failed to start: ${e.message} — retrying in 30s`);
     browser = null;
     page = null;
+    setTimeout(startBrowser, 30_000);
   }
 }
 
