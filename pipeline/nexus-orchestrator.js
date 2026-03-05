@@ -541,9 +541,17 @@ async function runLoop() {
     if (directives.length === 0) {
       log('[Act] No directives this cycle — agents on track');
     } else {
-      for (const { agent, message } of directives) {
-        sendDirective(agent, message);
+      // Stagger dispatch so agents enter the Ollama queue one at a time.
+      // All 5 agents firing simultaneously causes the 3rd-5th to finish inference
+      // after the next directive arrives, making MindCraft discard the response.
+      // Stagger = intervalMs / numAgents, capped at 15s so it doesn't eat the full cycle.
+      const cfg = readLiveConfig();
+      const staggerMs = cfg.directiveStaggerMs ?? Math.min(15000, Math.floor((cfg.intervalMs ?? INTERVAL_MS) / directives.length));
+      for (let i = 0; i < directives.length; i++) {
+        if (i > 0) await new Promise(r => setTimeout(r, staggerMs));
+        sendDirective(directives[i].agent, directives[i].message);
       }
+      log(`[Act] Sent ${directives.length} directives with ${staggerMs}ms stagger`);
     }
   } catch (e) {
     log(`[Loop] Unhandled error: ${e.stack || e.message}`);
