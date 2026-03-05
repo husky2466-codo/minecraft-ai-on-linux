@@ -114,12 +114,15 @@ function startEyeBot() {
     setTimeout(async () => {
       const pos = eyeBot?.entity?.position;
       await rconCommand('/gamemode spectator NexusEye');
-      log('[EyeBot] Set to spectator mode (invisible, floating)');
+      await rconCommand('/gamerule doDaylightCycle false');
+      await rconCommand('/time set day');
+      log('[EyeBot] Set to spectator mode, locked time to day');
       if (pos) {
         await rconCommand(`/tp NexusEye ${Math.round(pos.x)} ${Math.round(pos.y + 80)} ${Math.round(pos.z)}`);
         log('[EyeBot] Teleported to overhead position (Y+80)');
       }
       // Wait for server to update position, then orient camera straight down
+      // In mineflayer: pitch = -π/2 looks straight up, +π/2 looks straight down
       setTimeout(() => {
         if (eyeBot) {
           eyeBot.look(0, Math.PI / 2, false);
@@ -264,7 +267,7 @@ function connectMindServer() {
         rconCommand(`/tp NexusEye ${cx} ${cy} ${cz}`)
           .then(() => {
             log(`[EyeBot] Re-centered above agent cluster at (${cx}, ${cy}, ${cz})`);
-            setTimeout(() => { if (eyeBot) eyeBot.look(0, Math.PI / 2, false); }, 1000);
+            setTimeout(() => { if (eyeBot) eyeBot.look(0, -Math.PI / 2, false); }, 1000);
             eyebotCentered = true;
           });
       }
