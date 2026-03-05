@@ -155,16 +155,20 @@ const STOP_CMD = [
 
 // START: wrap the full sequence in a detached nohup bash -c so SSH exec returns immediately.
 // Without this, the sleep 30 for Minecraft holds the SSH channel open until it times out.
+// Join with newlines — bash rejects `cmd &; next` (& and ; both terminate, can't be adjacent)
 const START_INNER = [
   'nohup bash ~/chromadb/start.sh > ~/chromadb/chroma.log 2>&1 &',
   'sleep 5',
-  `cd ~/minecraft-server; nohup java -Xmx8G -Xms4G -jar server.jar nogui > ~/minecraft-server/server.log 2>&1 &`,
+  `cd ~/minecraft-server`,
+  `nohup java -Xmx8G -Xms4G -jar server.jar nogui > ~/minecraft-server/server.log 2>&1 &`,
   'sleep 30',
-  `cd ${PROJECT}; nohup ${NODE} pipeline/ollama-queue.js > ~/ollama-queue.log 2>&1 &`,
+  `cd ${PROJECT}`,
+  `nohup ${NODE} pipeline/ollama-queue.js > ~/ollama-queue.log 2>&1 &`,
   'sleep 2',
-  `cd ${PROJECT}/mindcraft; ${PATH_PREFIX} nohup ${NODE} main.js > ~/mindcraft.log 2>&1 &`,
+  `cd ${PROJECT}/mindcraft`,
+  `${PATH_PREFIX} nohup ${NODE} main.js > ~/mindcraft.log 2>&1 &`,
   'echo "Stack started at $(date)"',
-].join('; ');
+].join('\n');
 
 // Single-quote the inner script (none of the parts contain single quotes)
 const START_CMD = `nohup bash -c '${START_INNER}' > ~/stack-start.log 2>&1 & echo "Stack launching"`;
