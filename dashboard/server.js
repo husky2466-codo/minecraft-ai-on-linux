@@ -134,28 +134,34 @@ const PROJECT = '/home/myroproductions/Projects/minecraft-ai-on-linux';
 const NODE = '$HOME/.nvm/versions/node/v22.22.0/bin/node';
 const PATH_PREFIX = 'PATH=$HOME/.nvm/versions/node/v22.22.0/bin:$HOME/.local/bin:$PATH';
 
-// Use semicolons (not &&) after background jobs — zsh/bash both handle this correctly
-// Kill MindCraft: get PID holding port 8080 and SIGKILL it + all init_agent children
+// STOP: kill MindCraft (port 8080), agent children, queue proxy, Minecraft, ChromaDB
 const STOP_CMD =
   'MCPID=$(ss -Htlnp src :8080 | grep -oP "pid=\\K[0-9]+" | head -1); ' +
   '[ -n "$MCPID" ] && kill -9 $MCPID 2>/dev/null; ' +
   'pkill -9 -f "init_agent.js" 2>/dev/null; ' +
-  'pkill -f "server.jar" 2>/dev/null; pkill -f "chroma run" 2>/dev/null; pkill -f "ollama-queue.js" 2>/dev/null; sleep 3; echo "Stopped"';
+  'pkill -f "ollama-queue.js" 2>/dev/null; ' +
+  'pkill -f "server.jar" 2>/dev/null; pkill -f "chroma run" 2>/dev/null; sleep 2; echo "Stopped"';
 
-const START_CMD =
-  // ChromaDB
-  `nohup bash ~/chromadb/start.sh > ~/chromadb/chroma.log 2>&1 & sleep 5; ` +
-  // Minecraft server
-  `cd ~/minecraft-server; nohup java -Xmx8G -Xms4G -jar server.jar nogui > server.log 2>&1 & sleep 30; ` +
-  // Ollama queue proxy — serializes 7b/14b requests to prevent model-swap thrashing
-  `cd ${PROJECT}; nohup ${NODE} pipeline/ollama-queue.js > ~/ollama-queue.log 2>&1 & sleep 2; ` +
-  // MindCraft — all 6 agents from settings.js
-  `cd ${PROJECT}/mindcraft; ${PATH_PREFIX} nohup ${NODE} main.js > ~/mindcraft.log 2>&1 & echo "Stack started"`;
+// START: wrap the full sequence in a detached nohup bash -c so SSH exec returns immediately.
+// Without this, the sleep 30 for Minecraft holds the SSH channel open until it times out.
+const START_INNER = [
+  'nohup bash ~/chromadb/start.sh > ~/chromadb/chroma.log 2>&1 &',
+  'sleep 5',
+  `cd ~/minecraft-server; nohup java -Xmx8G -Xms4G -jar server.jar nogui > ~/minecraft-server/server.log 2>&1 &`,
+  'sleep 30',
+  `cd ${PROJECT}; nohup ${NODE} pipeline/ollama-queue.js > ~/ollama-queue.log 2>&1 &`,
+  'sleep 2',
+  `cd ${PROJECT}/mindcraft; ${PATH_PREFIX} nohup ${NODE} main.js > ~/mindcraft.log 2>&1 &`,
+  'echo "Stack started at $(date)"',
+].join('; ');
+
+// Single-quote the inner script (none of the parts contain single quotes)
+const START_CMD = `nohup bash -c '${START_INNER}' > ~/stack-start.log 2>&1 & echo "Stack launching"`;
 
 const STACK_COMMANDS = {
   start:   START_CMD,
   stop:    STOP_CMD,
-  restart: `${STOP_CMD}; sleep 3; ${START_CMD}`,
+  restart: `${STOP_CMD}; sleep 2; ${START_CMD}`,
 };
 
 app.post('/api/control/:action', async (req, res) => {
