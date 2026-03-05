@@ -166,12 +166,10 @@ function checkPhase(agentStates) {
   resolvedPhase = Math.min(resolvedPhase, PHASES.length - 1);
   const phase = PHASES[resolvedPhase];
 
-  const conditions = phase.thresholds.map(t => ({
-    label: t.label,
-    have:  countMatching(inv, t.match),
-    need:  t.count,
-    met:   countMatching(inv, t.match) >= t.count,
-  }));
+  const conditions = phase.thresholds.map(t => {
+    const have = countMatching(inv, t.match);
+    return { label: t.label, have, need: t.count, met: have >= t.count };
+  });
 
   return { phase: resolvedPhase, phaseName: phase.name, phaseFocus: phase.focus, conditions };
 }
@@ -193,12 +191,13 @@ function getBottlenecks(phaseIndex, agentStates) {
       task:  BOTTLENECK_TASKS[t.label] || { task: 'gather', target: t.label, hint: `Obtain ${t.label}` },
     }))
     .filter(b => b.gap > 0)
-    .sort((a, b) => (a.gap / a.need) - (b.gap / b.need));
+    .sort((a, b) => (a.gap / a.need) - (b.gap / b.need)); // closest-to-threshold first (smallest gap ratio)
 }
 
 // ── assignAgents ──────────────────────────────────────────────────────────
 // Returns: { Rook: { task, target, reason, hint }, ... }
 
+// agentStates is passed for future use (e.g. per-agent health/task checks). Not yet used.
 function assignAgents(bottlenecks, agentStates, phaseIndex) {
   const agentNames = Object.keys(ROLE_AFFINITY);
   const assignments = {};
