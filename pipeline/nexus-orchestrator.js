@@ -105,7 +105,7 @@ function startEyeBot() {
   eyeBot.once('spawn', () => {
     log('[EyeBot] NexusEye spawned in world');
     try {
-      mineflayerViewer(eyeBot, { port: VIEWER_PORT, firstPerson: true });
+      mineflayerViewer(eyeBot, { port: VIEWER_PORT, firstPerson: false });
       log(`[EyeBot] prismarine-viewer on :${VIEWER_PORT}`);
     } catch (e) {
       log(`[EyeBot] Viewer failed to start: ${e.message}`);
@@ -118,17 +118,9 @@ function startEyeBot() {
       await rconCommand('/time set day');
       log('[EyeBot] Set to spectator mode, locked time to day');
       if (pos) {
-        await rconCommand(`/tp NexusEye ${Math.round(pos.x)} ${Math.round(pos.y + 80)} ${Math.round(pos.z)}`);
-        log('[EyeBot] Teleported to overhead position (Y+80)');
+        await rconCommand(`/tp NexusEye ${Math.round(pos.x)} ${Math.round(pos.y + 40)} ${Math.round(pos.z)}`);
+        log('[EyeBot] Teleported to overhead position (Y+40)');
       }
-      // Wait for server to update position, then orient camera straight down
-      // In mineflayer: pitch = -π/2 looks straight up, +π/2 looks straight down
-      setTimeout(() => {
-        if (eyeBot) {
-          eyeBot.look(0, Math.PI / 2, false);
-          log('[EyeBot] Camera oriented straight down (top-down view)');
-        }
-      }, 2000);
     }, 3000);
   });
 
@@ -267,7 +259,6 @@ function connectMindServer() {
         rconCommand(`/tp NexusEye ${cx} ${cy} ${cz}`)
           .then(() => {
             log(`[EyeBot] Re-centered above agent cluster at (${cx}, ${cy}, ${cz})`);
-            setTimeout(() => { if (eyeBot) eyeBot.look(0, -Math.PI / 2, false); }, 1000);
             eyebotCentered = true;
           });
       }
