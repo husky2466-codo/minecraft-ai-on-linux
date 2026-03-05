@@ -69,8 +69,8 @@ async function pump(family) {
   } catch (e) {
     console.error(`[queue] forward error for ${entry.agent}: ${e.message}`);
     if (!entry.res.writableEnded) {
-      entry.res.writeHead(500, { 'Content-Type': 'application/json' });
-      entry.res.end(JSON.stringify({ error: e.message }));
+      // Return a valid chat response so MindCraft doesn't crash on missing message.content
+      noopResponse(entry.path, entry.body.model || 'unknown', entry.res);
     }
   }
   pump(family);
