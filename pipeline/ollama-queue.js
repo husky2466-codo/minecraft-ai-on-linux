@@ -17,12 +17,39 @@ function getFamily(model = '') {
   return '7b';
 }
 
+// Max items waiting per queue. When full, return an immediate no-op response
+// so the agent idles instead of piling up retries.
+const MAX_QUEUE_DEPTH = 4;
+
 const queues = { '7b': [], '14b': [] };
 const active = { '7b': false, '14b': false };
 let totalQueued = 0;
 let totalServed = 0;
+let totalDropped = 0;
+
+function noopResponse(path, model, res) {
+  const now = new Date().toISOString();
+  let payload;
+  if (path === '/api/chat') {
+    payload = JSON.stringify({
+      model, created_at: now,
+      message: { role: 'assistant', content: '\t' },
+      done_reason: 'stop', done: true,
+    });
+  } else {
+    payload = JSON.stringify({ model, created_at: now, response: '\t', done: true, done_reason: 'stop' });
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(payload);
+}
 
 function enqueue(family, entry) {
+  if (queues[family].length >= MAX_QUEUE_DEPTH) {
+    totalDropped++;
+    console.log(`[queue] DROPPED ${entry.agent || '?'} (${family} queue full at ${MAX_QUEUE_DEPTH}) | dropped=${totalDropped}`);
+    noopResponse(entry.path, entry.body.model || family, entry.res);
+    return;
+  }
   totalQueued++;
   queues[family].push(entry);
   const pos = queues[family].length;
@@ -42,8 +69,8 @@ async function pump(family) {
   } catch (e) {
     console.error(`[queue] forward error for ${entry.agent}: ${e.message}`);
     if (!entry.res.writableEnded) {
-      entry.res.writeHead(500, { 'Content-Type': 'application/json' });
-      entry.res.end(JSON.stringify({ error: e.message }));
+      // Return a valid chat response so MindCraft doesn't crash on missing message.content
+      noopResponse(entry.path, entry.body.model || 'unknown', entry.res);
     }
   }
   pump(family);
@@ -106,7 +133,20 @@ const server = http.createServer((req, res) => {
     const isInference = req.method === 'POST' &&
       (req.url === '/api/chat' || req.url === '/api/generate');
 
-    if (isInference) {
+    const json = (data) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); };
+
+    if (req.method === 'GET' && req.url === '/queue/stats') {
+      json({ '7b': queues['7b'].length, '14b': queues['14b'].length, served: totalServed, dropped: totalDropped });
+    } else if (req.method === 'POST' && req.url === '/queue/clear') {
+      const dropped7 = queues['7b'].length;
+      const dropped14 = queues['14b'].length;
+      queues['7b'].forEach(e => { if (!e.res.writableEnded) { e.res.writeHead(200, { 'Content-Type': 'application/json' }); e.res.end(JSON.stringify({ model: e.body.model, response: '\t', done: true })); } });
+      queues['14b'].forEach(e => { if (!e.res.writableEnded) { e.res.writeHead(200, { 'Content-Type': 'application/json' }); e.res.end(JSON.stringify({ model: e.body.model, response: '\t', done: true })); } });
+      queues['7b'] = [];
+      queues['14b'] = [];
+      console.log(`[queue] CLEARED — flushed ${dropped7} 7b + ${dropped14} 14b items`);
+      json({ cleared: { '7b': dropped7, '14b': dropped14 } });
+    } else if (isInference) {
       let body = {};
       try { body = JSON.parse(rawBody); } catch (_) {}
       const family = getFamily(body.model || '');

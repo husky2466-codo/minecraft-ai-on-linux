@@ -336,6 +336,24 @@ app.post('/api/orchestrator/config', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Ollama Queue proxy ────────────────────────────────────────────────────────
+const QUEUE_BASE = 'http://10.0.0.10:11435';
+
+async function fetchQueue(path, method = 'GET') {
+  const r = await fetch(`${QUEUE_BASE}${path}`, { method });
+  return r.json();
+}
+
+app.get('/api/queue/stats', async (req, res) => {
+  try { res.json(await fetchQueue('/queue/stats')); }
+  catch (e) { res.status(503).json({ error: e.message }); }
+});
+
+app.post('/api/queue/clear', async (req, res) => {
+  try { res.json(await fetchQueue('/queue/clear', 'POST')); }
+  catch (e) { res.status(503).json({ error: e.message }); }
+});
+
 const PORT = 4000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Dashboard running at http://0.0.0.0:${PORT}`);

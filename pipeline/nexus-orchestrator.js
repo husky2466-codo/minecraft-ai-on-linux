@@ -7,6 +7,26 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const net = require('net');
+const {
+  checkPhase,
+  getBottlenecks,
+  assignAgents,
+  markVisited,
+  getNearestUnexplored, // reserved — used in Phase 8 Cave Exploration directives
+} = require('./nexus-phase-engine');
+
+// ── Global error guard ────────────────────────────────────────────────────
+// prismarine-viewer throws async EADDRINUSE if port 3099 is busy — catch it
+// here to prevent process crash; the loop still runs without the viewer.
+process.on('uncaughtException', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`[EyeBot] Viewer port ${err.port || 3099} already in use — skipping viewer`);
+    viewerStarted = true; // prevent retries
+  } else {
+    console.error('[FATAL] Uncaught exception:', err);
+    process.exit(1);
+  }
+});
 
 // ── Config ────────────────────────────────────────────────────────────────
 const MC_HOST        = '127.0.0.1';
@@ -18,13 +38,24 @@ const REASON_MODEL   = 'qwen2.5:7b';
 const INTERVAL_MS    = parseInt(process.env.NEXUS_INTERVAL_MS || '30000', 10);
 const MC_LOG         = path.join(process.env.HOME, 'mindcraft.log');
 
+// NexusEye orbits the agent cluster — radius/height in blocks, step in degrees per tick
+const ORBIT_RADIUS = 35;
+const ORBIT_HEIGHT = 22;
+const ORBIT_STEP   = 90; // 4 cardinal positions (N/E/S/W) → full loop every ~2 min at 30s ticks
+
 const AGENT_ROLES = {
   Rook:  'gatherer — mines resources and fills storage chests',
   Vex:   'combat — guards the base and eliminates threats',
-  Drift: 'explorer — maps new terrain and finds biomes/resources',
+  Drift: 'farmer — tends crops, breeds animals, and keeps the team fed',
   Echo:  'crafter — smelts ore, cooks food, crafts tools and keeps the team supplied',
   Sage:  'engineer — crafts tools, builds structures, manages inventory',
 };
+
+// Phase name lookup for milestone logging (mirrors nexus-phase-engine PHASES order)
+const PHASES_FOR_LOG = [
+  'Shelter', 'Basic Tools', 'Food Secured', 'Storage System', 'Iron Gathering',
+  'Iron Age', 'Armor and Weapons', 'Surface Secured', 'Cave Exploration', 'Nether Prep',
+];
 
 // ── State ─────────────────────────────────────────────────────────────────
 let eyeBot      = null;
@@ -33,12 +64,53 @@ let page        = null;
 let agentStates = {};
 let agentList   = [];
 let lastFrame   = null;
-let loopRunning = false;
-let msSocket    = null;
+let loopRunning  = false;
+let msSocket     = null;
+let orbitAngle   = 0; // degrees, advances ORBIT_STEP each tick
+let viewerStarted = false;
 
 // ── Logging ───────────────────────────────────────────────────────────────
 function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
+}
+
+// ── Live config (hot-reloaded each tick) ──────────────────────────────────
+const CONFIG_FILE = path.join(process.env.HOME, 'nexus-config.json');
+function readLiveConfig() {
+  try { return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch (_) { return {}; }
+}
+function writeLiveConfig(cfg) {
+  try { fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2)); } catch (_) {}
+}
+
+// ── Task state (persistent per-agent goals across cycles) ─────────────────
+const TASK_STATE_FILE = path.join(process.env.HOME, 'nexus-task-state.json');
+
+function readTaskState() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(TASK_STATE_FILE, 'utf8'));
+    return {
+      phase:          raw.phase          ?? 0,
+      phaseStartedAt: raw.phaseStartedAt ?? new Date().toISOString(),
+      goals:          raw.goals          ?? {},
+      lastDirectives: raw.lastDirectives ?? {},
+      exploredChunks: raw.exploredChunks ?? [],
+      milestones:     raw.milestones     ?? [],
+    };
+  } catch (_) {
+    return {
+      phase: 0, phaseStartedAt: new Date().toISOString(),
+      goals: {}, lastDirectives: {},
+      exploredChunks: [], milestones: [],
+    };
+  }
+}
+
+function writeTaskState(state) {
+  try {
+    state.updatedAt = new Date().toISOString();
+    fs.writeFileSync(TASK_STATE_FILE, JSON.stringify(state, null, 2));
+  } catch (_) {}
 }
 
 // ── RCON helper — teleport NexusEye to elevated position ─────────────────
@@ -104,19 +176,20 @@ function startEyeBot() {
 
   eyeBot.once('spawn', () => {
     log('[EyeBot] NexusEye spawned in world');
-    try {
-      mineflayerViewer(eyeBot, { port: VIEWER_PORT, firstPerson: false });
-      log(`[EyeBot] prismarine-viewer on :${VIEWER_PORT}`);
-    } catch (e) {
-      log(`[EyeBot] Viewer failed to start: ${e.message}`);
+    if (!viewerStarted) {
+      try {
+        mineflayerViewer(eyeBot, { port: VIEWER_PORT, firstPerson: false });
+        log(`[EyeBot] prismarine-viewer on :${VIEWER_PORT}`);
+        viewerStarted = true;
+      } catch (e) {
+        log(`[EyeBot] Viewer failed to start: ${e.message}`);
+      }
     }
     // Set spectator mode so NexusEye floats and is invisible, then teleport up and look down
     setTimeout(async () => {
       const pos = eyeBot?.entity?.position;
       await rconCommand('/gamemode spectator NexusEye');
-      await rconCommand('/gamerule doDaylightCycle false');
-      await rconCommand('/time set day');
-      log('[EyeBot] Set to spectator mode, locked time to day');
+      log('[EyeBot] Set to spectator mode');
       if (pos) {
         // Y+5 just above terrain — bot looks straight down, so third-person camera
         // places itself directly above, giving a top-down overhead view
@@ -266,8 +339,8 @@ function connectMindServer() {
     // On first state-update with position data, re-center NexusEye above agent cluster
     if (!eyebotCentered && eyeBot) {
       const positions = arr
-        .filter(s => s?.position)
-        .map(s => s.position);
+        .filter(s => s?.gameplay?.position)
+        .map(s => s.gameplay.position);
       if (positions.length > 0) {
         const cx = Math.round(positions.reduce((a, p) => a + p.x, 0) / positions.length);
         const cz = Math.round(positions.reduce((a, p) => a + p.z, 0) / positions.length);
@@ -360,39 +433,73 @@ function buildAgentContext() {
   return Object.keys(AGENT_ROLES).map(name => {
     const s = agentStates[name];
     if (!s) return `${name} (${AGENT_ROLES[name]}): no data yet`;
-    const pos = s.position
-      ? `pos=(${Math.round(s.position.x)},${Math.round(s.position.y)},${Math.round(s.position.z)})`
+    const gp = s.gameplay;
+    const pos = gp?.position
+      ? `pos=(${Math.round(gp.position.x)},${Math.round(gp.position.y)},${Math.round(gp.position.z)})`
       : 'pos=unknown';
-    const task = s.task || s.current_action || 'idle';
-    const inv = s.inventory
-      ? Object.entries(s.inventory).slice(0, 5).map(([k, v]) => `${k}×${v}`).join(', ') || 'empty'
+    const task = s.action?.current || 'idle';
+    const inv = s.inventory?.counts
+      ? Object.entries(s.inventory.counts).slice(0, 5).map(([k, v]) => `${k}×${v}`).join(', ') || 'empty'
       : 'unknown';
     return `${name} (${AGENT_ROLES[name]}): ${pos}, task="${task}", inventory=[${inv}]`;
   }).join('\n');
 }
 
-async function getDirectives(visualDescription, recentLogs, agentMemories = '') {
+async function getDirectives(visualDescription, recentLogs, agentMemories = '', taskState = {}, phaseBrief = {}) {
   const agentCtx = buildAgentContext();
+  const { phaseName = 'Unknown', phaseFocus = '', bottlenecks = [], assignments = {} } = phaseBrief;
+  if (Object.keys(assignments).length === 0) {
+    log('[Reason] WARNING: empty assignments in phaseBrief — phase engine may not have run');
+  }
 
-  const systemPrompt = `You are Nexus — the autonomous AI orchestrator for a 5-agent Minecraft team. You observe the world every 60 seconds and actively direct all agents like a hands-on manager.
+  // Build assignment block for LLM
+  const assignmentBlock = Object.entries(assignments).map(([name, a]) => {
+    return `  ${name}: ${a.task.toUpperCase()} → ${a.target} | ${a.hint}`;
+  }).join('\n');
 
-ALWAYS issue a directive for EVERY agent — even those working, to reinforce or refine their task.
-Be specific: reference resources, locations, or other agents by name.
-Keep each directive under 25 words. Use imperative commands.
-Prioritize: (1) active threats/safety, (2) full storage needs emptying, (3) needed materials, (4) base construction, (5) exploration.
+  // Build bottleneck status for LLM context
+  const bottleneckBlock = bottlenecks.length > 0
+    ? bottlenecks.map(b => `  ${b.label}: have ${b.have}, need ${b.need} (gap: ${b.gap})`).join('\n')
+    : '  All phase thresholds met — consolidate and prepare for next phase.';
 
-Format EXACTLY — one line per agent, all five:
-Rook: directive
-Vex: directive
-Drift: directive
-Echo: directive
-Sage: directive`;
+  const systemPrompt = `You are Nexus — the AI foreman for a 5-agent Minecraft survival team.
 
-  const memSection = agentMemories
-    ? `\nAGENT MEMORIES (relevant past events):\n${agentMemories}\n`
-    : '';
+The phase engine has already decided what each agent does this tick. Your ONLY job is to write each agent's directive as a short, direct work order.
 
-  const userPrompt = `VISUAL SNAPSHOT (what NexusEye sees from above):
+DIRECTIVE RULES:
+- Each directive must be ≤20 words total
+- The HINT in each assignment already contains the exact MindCraft commands. Copy commands from the HINT verbatim — do NOT invent, rename, or alter command syntax or arguments.
+- Valid commands: !collectBlocks, !craftRecipe, !smeltItem, !searchForBlock, !attack, !equip, !placeHere, !goToCoordinates, !goToBed, !stay, !stop
+- FORBIDDEN commands (do not exist): !tillAndSow, !patrolNear, !monitorEntrance, !auditStorage, !initStorage
+- Vex guards — her directive names who to protect or where to patrol using !goToCoordinates or !stay
+
+Output EXACTLY this format (no extra text, no explanation):
+GOALS:
+Rook: [one-sentence goal]
+Vex: [one-sentence goal]
+Drift: [one-sentence goal]
+Echo: [one-sentence goal]
+Sage: [one-sentence goal]
+
+DIRECTIVES:
+Rook: [directive copying commands from HINT verbatim]
+Vex: [patrol directive]
+Drift: [directive copying commands from HINT verbatim]
+Echo: [directive copying commands from HINT verbatim]
+Sage: [directive copying commands from HINT verbatim]`;
+
+  const memSection = agentMemories ? `\nAGENT MEMORIES:\n${agentMemories}\n` : '';
+
+  const userPrompt = `CURRENT PHASE: ${taskState.phase}/9 — ${phaseName}
+PHASE FOCUS: ${phaseFocus}
+
+BOTTLENECK STATUS (what's blocking phase completion):
+${bottleneckBlock}
+
+AGENT ASSIGNMENTS (from phase engine — do not change):
+${assignmentBlock}
+
+VISUAL SNAPSHOT:
 ${visualDescription}
 ${memSection}
 AGENT STATES:
@@ -401,36 +508,45 @@ ${agentCtx}
 RECENT LOG (last 50 lines):
 ${recentLogs.slice(-2000)}
 
-Issue a directive for every agent now. All five lines required.`;
+Write GOALS then DIRECTIVES now.`;
 
   try {
     const res = await ollamaPost('/api/chat', {
       model: REASON_MODEL,
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
+        { role: 'user',   content: userPrompt },
       ],
       stream: false,
-      options: { num_predict: 300 },
+      options: { num_predict: 600 },
     });
-    return res.message?.content?.trim() || '';
+    const raw = res.message?.content?.trim() || '';
+    log(`[Reason] Response:\n${raw}`);
+    return parseOrchResponse(raw);
   } catch (e) {
     log(`[Reason] Error: ${e.message}`);
-    return '';
+    return { directives: [], updatedGoals: {} };
   }
 }
 
-// ── Directive parser + sender ─────────────────────────────────────────────
-function parseDirectives(raw) {
+// ── Response parser — handles GOALS + DIRECTIVES two-section format ───────
+function parseOrchResponse(raw) {
   const known = new Set(Object.keys(AGENT_ROLES));
   const directives = [];
+  const updatedGoals = {};
+  let section = null;
+
   for (const line of raw.split('\n')) {
-    const m = line.match(/^([A-Za-z]+):\s*(.+)$/);
-    if (m && known.has(m[1])) {
-      directives.push({ agent: m[1], message: m[2].trim() });
-    }
+    const trimmed = line.trim();
+    if (/^GOALS:/i.test(trimmed))      { section = 'goals';      continue; }
+    if (/^DIRECTIVES:/i.test(trimmed)) { section = 'directives'; continue; }
+    const m = trimmed.match(/^([A-Za-z]+):\s*(.+)$/);
+    if (!m || !known.has(m[1])) continue;
+    const [, name, text] = m;
+    if (section === 'goals')      updatedGoals[name] = text.trim();
+    if (section === 'directives') directives.push({ agent: name, message: text.trim() });
   }
-  return directives;
+  return { directives, updatedGoals };
 }
 
 function sendDirective(agent, message) {
@@ -440,6 +556,40 @@ function sendDirective(agent, message) {
   }
   msSocket.emit('send-message', agent, { from: 'Nexus', message });
   log(`[Directive] → ${agent}: ${message}`);
+}
+
+// ── NexusEye orbit — reposition each tick for varied visual coverage ──────
+async function orbitEyeBot() {
+  if (!eyeBot) return;
+
+  // Compute centroid of all agents with known positions
+  const positions = Object.values(agentStates).filter(s => s?.gameplay?.position).map(s => s.gameplay.position);
+  if (positions.length === 0) return;
+
+  const cx = positions.reduce((a, p) => a + p.x, 0) / positions.length;
+  const cz = positions.reduce((a, p) => a + p.z, 0) / positions.length;
+  const cy = Math.max(...positions.map(p => p.y));
+
+  // Advance orbit angle
+  orbitAngle = (orbitAngle + ORBIT_STEP) % 360;
+  const rad = orbitAngle * Math.PI / 180;
+
+  const ex = Math.round(cx + ORBIT_RADIUS * Math.cos(rad));
+  const ez = Math.round(cz + ORBIT_RADIUS * Math.sin(rad));
+  const ey = Math.round(cy + ORBIT_HEIGHT);
+
+  await rconCommand(`/tp NexusEye ${ex} ${ey} ${ez}`);
+
+  // Look toward centroid with an oblique downward angle
+  await new Promise(r => setTimeout(r, 1000));
+  if (eyeBot) {
+    const yaw   = Math.atan2(cz - ez, cx - ex);
+    const dist  = Math.sqrt((cx - ex) ** 2 + (cz - ez) ** 2);
+    const pitch = Math.atan2(ORBIT_HEIGHT, dist); // tilts down toward agents
+    eyeBot.look(yaw, pitch, false);
+  }
+
+  log(`[EyeBot] Orbit ${orbitAngle}° → (${ex}, ${ey}, ${ez}) looking toward centroid (${Math.round(cx)}, ${Math.round(cz)})`);
 }
 
 // ── Main loop ─────────────────────────────────────────────────────────────
@@ -473,6 +623,11 @@ async function runLoop() {
   }
 
   try {
+    // Move NexusEye to next orbit position before capturing the frame
+    await orbitEyeBot();
+    // Pause so prismarine-viewer WebGL re-renders the new angle before screenshot
+    await new Promise(r => setTimeout(r, 3000));
+
     const frame = await captureFrame();
     if (frame) {
       lastFrame = frame;
@@ -488,16 +643,74 @@ async function runLoop() {
     const agentMemories = await queryAgentMemories(visual);
     if (agentMemories) log(`[Memory] Retrieved facts: ${agentMemories.split('\n').length} lines`);
 
-    const raw = await getDirectives(visual, recentLogs, agentMemories);
-    log(`[Reason] Response:\n${raw}`);
+    // Load persistent task state
+    const taskState = readTaskState();
 
-    const directives = parseDirectives(raw);
-    if (directives.length === 0) {
-      log('[Act] No directives this cycle — agents on track');
+    // ── Phase engine ──────────────────────────────────────────────────────
+    // 1. Check current phase against live inventory
+    const { phase, phaseName, phaseFocus, conditions } = checkPhase(agentStates);
+
+    // 2. Detect phase advancement and log milestones
+    if (phase > taskState.phase) {
+      const prevName = PHASES_FOR_LOG[taskState.phase] || `Phase ${taskState.phase}`;
+      log(`[Phase] *** MILESTONE: "${prevName}" complete → advancing to Phase ${phase} (${phaseName}) ***`);
+      taskState.milestones.push({
+        phase:       taskState.phase,
+        name:        prevName,
+        completedAt: new Date().toISOString(),
+      });
+      taskState.phaseStartedAt = new Date().toISOString();
+    }
+
+    // 3. Emergency regression: if Phase 8+ and armor count drops below 10, regress to Phase 6
+    const armorCount = conditions.find(c => c.label === 'armor equipped')?.have ?? null;
+    if (phase >= 8 && armorCount !== null && armorCount < 10) {
+      log(`[Phase] EMERGENCY: armor count ${armorCount} < 10 — regressing to Phase 6 (Armor and Weapons)`);
+      taskState.phase = 6;
     } else {
-      for (const { agent, message } of directives) {
-        sendDirective(agent, message);
+      taskState.phase = phase;
+    }
+
+    // 4. Get bottlenecks and dynamic agent assignments from phase engine
+    const bottlenecks = getBottlenecks(taskState.phase, agentStates);
+    const assignments = assignAgents(bottlenecks, agentStates, taskState.phase);
+
+    // 5. Update exploration tracker from current agent positions
+    taskState.exploredChunks = markVisited(agentStates, taskState.exploredChunks);
+
+    const logPhaseName = PHASES_FOR_LOG[taskState.phase] || phaseName;
+    log(`[Phase] ${logPhaseName} (${taskState.phase}/9) | bottlenecks: ${bottlenecks.map(b => `${b.label} ${b.have}/${b.need}`).join(', ') || 'none'}`);
+    log(`[Phase] Assignments: ${Object.entries(assignments).map(([n, a]) => `${n}=${a.task}:${a.target}`).join(', ')}`);
+
+    const phaseBrief = { phaseName, phaseFocus, bottlenecks, assignments };
+    const { directives, updatedGoals } = await getDirectives(visual, recentLogs, agentMemories, taskState, phaseBrief);
+
+    // Persist updated state
+    const lastDirectives = {};
+    directives.forEach(d => { lastDirectives[d.agent] = d.message; });
+    writeTaskState({
+      ...taskState,
+      goals:          { ...taskState.goals, ...updatedGoals },
+      lastDirectives: { ...taskState.lastDirectives, ...lastDirectives },
+    });
+    if (Object.keys(updatedGoals).length > 0) {
+      log(`[Phase] Goals updated: ${Object.keys(updatedGoals).map(n => `${n}="${updatedGoals[n].slice(0, 40)}"`).join(', ')}`);
+    }
+
+    if (directives.length === 0) {
+      log('[Act] No directives parsed this cycle');
+    } else {
+      if (directives.length < 5) {
+        log(`[Act] WARNING: only ${directives.length}/5 directives parsed — response may have been truncated`);
       }
+      // Stagger dispatch so agents enter the Ollama queue one at a time.
+      const cfg = readLiveConfig();
+      const staggerMs = cfg.directiveStaggerMs ?? Math.min(15000, Math.floor((cfg.intervalMs ?? INTERVAL_MS) / directives.length));
+      for (let i = 0; i < directives.length; i++) {
+        if (i > 0) await new Promise(r => setTimeout(r, staggerMs));
+        sendDirective(directives[i].agent, directives[i].message);
+      }
+      log(`[Act] Sent ${directives.length} directives with ${staggerMs}ms stagger`);
     }
   } catch (e) {
     log(`[Loop] Unhandled error: ${e.stack || e.message}`);
@@ -523,13 +736,7 @@ if (require.main === module) {
 
     // Self-scheduling loop — reads intervalMs from live config on each tick
     // so the dashboard can change it without restarting the process
-    const CONFIG_FILE = path.join(process.env.HOME, 'nexus-config.json');
-    function readLiveConfig() {
-      try { return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch (_) { return {}; }
-    }
-    function writeLiveConfig(cfg) {
-      try { fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2)); } catch (_) {}
-    }
+
     // Write default config if file doesn't exist
     if (!fs.existsSync(CONFIG_FILE)) {
       writeLiveConfig({ intervalMs: INTERVAL_MS, visionModel: VISION_MODEL, reasonModel: REASON_MODEL });
