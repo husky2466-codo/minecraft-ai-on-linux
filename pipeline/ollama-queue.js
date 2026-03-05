@@ -17,12 +17,39 @@ function getFamily(model = '') {
   return '7b';
 }
 
+// Max items waiting per queue. When full, return an immediate no-op response
+// so the agent idles instead of piling up retries.
+const MAX_QUEUE_DEPTH = 4;
+
 const queues = { '7b': [], '14b': [] };
 const active = { '7b': false, '14b': false };
 let totalQueued = 0;
 let totalServed = 0;
+let totalDropped = 0;
+
+function noopResponse(path, model, res) {
+  const now = new Date().toISOString();
+  let payload;
+  if (path === '/api/chat') {
+    payload = JSON.stringify({
+      model, created_at: now,
+      message: { role: 'assistant', content: '\t' },
+      done_reason: 'stop', done: true,
+    });
+  } else {
+    payload = JSON.stringify({ model, created_at: now, response: '\t', done: true, done_reason: 'stop' });
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(payload);
+}
 
 function enqueue(family, entry) {
+  if (queues[family].length >= MAX_QUEUE_DEPTH) {
+    totalDropped++;
+    console.log(`[queue] DROPPED ${entry.agent || '?'} (${family} queue full at ${MAX_QUEUE_DEPTH}) | dropped=${totalDropped}`);
+    noopResponse(entry.path, entry.body.model || family, entry.res);
+    return;
+  }
   totalQueued++;
   queues[family].push(entry);
   const pos = queues[family].length;
