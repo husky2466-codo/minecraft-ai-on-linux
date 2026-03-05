@@ -18,6 +18,11 @@ const REASON_MODEL   = 'qwen2.5:7b';
 const INTERVAL_MS    = parseInt(process.env.NEXUS_INTERVAL_MS || '30000', 10);
 const MC_LOG         = path.join(process.env.HOME, 'mindcraft.log');
 
+// NexusEye orbits the agent cluster — radius/height in blocks, step in degrees per tick
+const ORBIT_RADIUS = 35;
+const ORBIT_HEIGHT = 22;
+const ORBIT_STEP   = 45; // 8 positions → full rotation every ~4 min at 30s ticks
+
 const AGENT_ROLES = {
   Rook:  'gatherer — mines resources and fills storage chests',
   Vex:   'combat — guards the base and eliminates threats',
@@ -33,8 +38,9 @@ let page        = null;
 let agentStates = {};
 let agentList   = [];
 let lastFrame   = null;
-let loopRunning = false;
-let msSocket    = null;
+let loopRunning  = false;
+let msSocket     = null;
+let orbitAngle   = 0; // degrees, advances ORBIT_STEP each tick
 
 // ── Logging ───────────────────────────────────────────────────────────────
 function log(msg) {
@@ -442,6 +448,40 @@ function sendDirective(agent, message) {
   log(`[Directive] → ${agent}: ${message}`);
 }
 
+// ── NexusEye orbit — reposition each tick for varied visual coverage ──────
+async function orbitEyeBot() {
+  if (!eyeBot) return;
+
+  // Compute centroid of all agents with known positions
+  const positions = Object.values(agentStates).filter(s => s?.position).map(s => s.position);
+  if (positions.length === 0) return;
+
+  const cx = positions.reduce((a, p) => a + p.x, 0) / positions.length;
+  const cz = positions.reduce((a, p) => a + p.z, 0) / positions.length;
+  const cy = Math.max(...positions.map(p => p.y));
+
+  // Advance orbit angle
+  orbitAngle = (orbitAngle + ORBIT_STEP) % 360;
+  const rad = orbitAngle * Math.PI / 180;
+
+  const ex = Math.round(cx + ORBIT_RADIUS * Math.cos(rad));
+  const ez = Math.round(cz + ORBIT_RADIUS * Math.sin(rad));
+  const ey = Math.round(cy + ORBIT_HEIGHT);
+
+  await rconCommand(`/tp NexusEye ${ex} ${ey} ${ez}`);
+
+  // Look toward centroid with an oblique downward angle
+  await new Promise(r => setTimeout(r, 600));
+  if (eyeBot) {
+    const yaw   = Math.atan2(cz - ez, cx - ex);
+    const dist  = Math.sqrt((cx - ex) ** 2 + (cz - ez) ** 2);
+    const pitch = Math.atan2(ORBIT_HEIGHT, dist); // tilts down toward agents
+    eyeBot.look(yaw, pitch, false);
+  }
+
+  log(`[EyeBot] Orbit ${orbitAngle}° → (${ex}, ${ey}, ${ez}) looking toward centroid (${Math.round(cx)}, ${Math.round(cz)})`);
+}
+
 // ── Main loop ─────────────────────────────────────────────────────────────
 let loopWatchdog = null;
 let loopCount = 0;
@@ -473,6 +513,11 @@ async function runLoop() {
   }
 
   try {
+    // Move NexusEye to next orbit position before capturing the frame
+    await orbitEyeBot();
+    // Brief pause so prismarine-viewer renders the new angle before screenshot
+    await new Promise(r => setTimeout(r, 1500));
+
     const frame = await captureFrame();
     if (frame) {
       lastFrame = frame;
