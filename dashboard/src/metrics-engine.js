@@ -1,11 +1,32 @@
 // Rolling metrics per agent — dynamically populated as agents appear in logs
-export const metrics = {
-  responseTimes: {},  // { AgentName: [{ ts, ms }, ...] } (last 50)
-  commandCounts: {},  // { AgentName: { commandName: count } }
-  actionResults: {},  // { AgentName: { success: N, fail: N } }
-  totalCalls: {},     // { AgentName: N }
-  lastActivity: {},   // { AgentName: timestamp }
-};
+import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PERSIST_FILE = join(__dirname, '../metrics-state.json');
+
+function loadPersistedMetrics() {
+  try {
+    if (existsSync(PERSIST_FILE)) {
+      const raw = readFileSync(PERSIST_FILE, 'utf8');
+      const saved = JSON.parse(raw);
+      // Only restore counts/commands (not raw response time arrays — trim to last 20)
+      return {
+        responseTimes: Object.fromEntries(
+          Object.entries(saved.responseTimes || {}).map(([k, v]) => [k, v.slice(-20)])
+        ),
+        commandCounts: saved.commandCounts || {},
+        actionResults: saved.actionResults || {},
+        totalCalls: saved.totalCalls || {},
+        lastActivity: saved.lastActivity || {},
+      };
+    }
+  } catch (_) {}
+  return { responseTimes: {}, commandCounts: {}, actionResults: {}, totalCalls: {}, lastActivity: {} };
+}
+
+export const metrics = loadPersistedMetrics();
 
 function ensureAgent(name) {
   if (!metrics.responseTimes[name]) metrics.responseTimes[name] = [];
@@ -14,6 +35,16 @@ function ensureAgent(name) {
   if (metrics.totalCalls[name] == null) metrics.totalCalls[name] = 0;
   if (metrics.lastActivity[name] == null) metrics.lastActivity[name] = null;
 }
+
+// Persist metrics to disk every 30s
+let _persistDirty = false;
+setInterval(() => {
+  if (!_persistDirty) return;
+  try {
+    writeFileSync(PERSIST_FILE, JSON.stringify(metrics), 'utf8');
+    _persistDirty = false;
+  } catch (_) {}
+}, 30_000);
 
 // Track pending LLM calls: { agentName: startTs }
 const pendingTimers = {};
@@ -46,6 +77,7 @@ export function parseMindcraftLine(line) {
         metrics.totalCalls[agent]++;
         metrics.lastActivity[agent] = ts;
         delete pendingTimers[agent];
+        _persistDirty = true;
         return { type: 'response-time', agent, ms };
       }
     }
@@ -57,6 +89,7 @@ export function parseMindcraftLine(line) {
     const cmd = cmdMatch[1];
     ensureAgent(lastActiveAgent);
     metrics.commandCounts[lastActiveAgent][cmd] = (metrics.commandCounts[lastActiveAgent][cmd] || 0) + 1;
+    _persistDirty = true;
     return { type: 'command', agent: lastActiveAgent, cmd };
   }
 
@@ -65,6 +98,7 @@ export function parseMindcraftLine(line) {
   if (successMatch && lastActiveAgent) {
     ensureAgent(lastActiveAgent);
     metrics.actionResults[lastActiveAgent].success++;
+    _persistDirty = true;
     return { type: 'action-result', agent: lastActiveAgent, result: 'success' };
   }
 
@@ -73,6 +107,7 @@ export function parseMindcraftLine(line) {
   if (failMatch && lastActiveAgent) {
     ensureAgent(lastActiveAgent);
     metrics.actionResults[lastActiveAgent].fail++;
+    _persistDirty = true;
     return { type: 'action-result', agent: lastActiveAgent, result: 'fail' };
   }
 

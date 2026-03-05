@@ -2256,6 +2256,7 @@ async function init() {
   } catch (_) {}
 
   buildAgentCards();
+  syncChartAgents();   // init chart datasets/labels now that AGENTS is populated
   buildModeControls();
 
   await loadMetrics();
