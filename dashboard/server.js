@@ -63,6 +63,18 @@ tailLog('/home/myroproductions/minecraft-server/server.log', (line) => {
 // Metrics REST endpoint
 app.get('/api/metrics', (req, res) => res.json(metrics));
 
+// --- Orchestrator (Nexus) state ---
+// Returns Nexus's agent state + its memory file in one call
+app.get('/api/orchestrator', async (req, res) => {
+  const state = agentStates['Nexus'] || null;
+  let memory = null;
+  try {
+    const raw = await readRemoteFile(`${MINDCRAFT_PATH}/bots/Nexus/memory.json`);
+    memory = JSON.parse(raw);
+  } catch (_) {}
+  res.json({ state, memory });
+});
+
 // --- Agent memory files ---
 app.get('/api/memories/:agent', async (req, res) => {
   const { agent } = req.params;

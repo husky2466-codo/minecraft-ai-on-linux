@@ -601,6 +601,44 @@
       flex-wrap: wrap;
     }
 
+    /* --- Orchestrator section --- */
+    .orch-status-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .orch-stat-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+    }
+    .orch-stat-label { font-size: 10px; color: var(--text-dim); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 4px; }
+    .orch-stat-value { font-size: 15px; font-weight: 600; color: #fff176; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .orch-panels { display: grid; grid-template-columns: 1fr 1.6fr; gap: 14px; }
+    @media (max-width: 900px) { .orch-panels { grid-template-columns: 1fr; } }
+    .orch-card { display: flex; flex-direction: column; }
+    .orch-feed {
+      flex: 1;
+      height: 320px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-right: 4px;
+    }
+    .directive-item {
+      background: #0e1525;
+      border-left: 3px solid #fff176;
+      border-radius: 4px;
+      padding: 7px 10px;
+      font-size: 12px;
+    }
+    .directive-item .d-target { font-weight: 700; color: #fff176; margin-right: 6px; }
+    .directive-item .d-msg { color: var(--text); }
+    .directive-item .d-ts { font-size: 10px; color: var(--text-dim); float: right; }
+
     .log-box {
       height: 500px;
       overflow-y: auto;
@@ -727,6 +765,10 @@
       <span class="nav-icon">&#129302;</span>
       <span class="nav-text">Agents</span>
     </a>
+    <a href="#orchestrator">
+      <span class="nav-icon">&#127760;&#65039;</span>
+      <span class="nav-text">Orchestrator</span>
+    </a>
     <a href="#world-map">
       <span class="nav-icon">&#127760;</span>
       <span class="nav-text">World Map</span>
@@ -828,6 +870,68 @@
     <div class="section-title">&#129302; Live Agents</div>
     <div class="agents-grid" id="agents-grid">
       <!-- filled by JS -->
+    </div>
+  </section>
+
+  <!-- SECTION 2b: Orchestrator -->
+  <section id="orchestrator">
+    <div class="section-title">&#127972; Orchestrator — Nexus <span class="badge" id="nexus-model-badge">llama3.3:70b</span></div>
+
+    <!-- Status bar -->
+    <div class="orch-status-bar">
+      <div class="orch-stat-card">
+        <div class="orch-stat-label">STATUS</div>
+        <div class="orch-stat-value" id="nexus-status">offline</div>
+      </div>
+      <div class="orch-stat-card">
+        <div class="orch-stat-label">LAST ACTION</div>
+        <div class="orch-stat-value" id="nexus-last-action">—</div>
+      </div>
+      <div class="orch-stat-card">
+        <div class="orch-stat-label">DIRECTIVES SENT</div>
+        <div class="orch-stat-value" id="nexus-directive-count">0</div>
+      </div>
+      <div class="orch-stat-card">
+        <div class="orch-stat-label">LAST DIRECTIVE TO</div>
+        <div class="orch-stat-value" id="nexus-last-target">—</div>
+      </div>
+      <div class="orch-stat-card">
+        <div class="orch-stat-label">POSITION</div>
+        <div class="orch-stat-value" id="nexus-position">—</div>
+      </div>
+      <div class="orch-stat-card">
+        <div class="orch-stat-label">HEALTH / FOOD</div>
+        <div class="orch-stat-value" id="nexus-health">—</div>
+      </div>
+    </div>
+
+    <!-- Directive feed + terminal side by side -->
+    <div class="orch-panels">
+
+      <!-- Left: Directive feed -->
+      <div class="card orch-card">
+        <div class="card-title">Directive Feed <span class="badge" id="nexus-feed-count">0</span></div>
+        <div id="nexus-directive-feed" class="orch-feed"></div>
+      </div>
+
+      <!-- Right: Nexus log terminal -->
+      <div class="card orch-card">
+        <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
+          <span>Nexus Terminal</span>
+          <div style="display:flex; gap:6px;">
+            <button class="btn btn-dim btn-sm" onclick="toggleNexusScroll()">&#8659; Auto-scroll ON</button>
+            <button class="btn btn-dim btn-sm" onclick="clearNexusLog()">Clear</button>
+          </div>
+        </div>
+        <div id="nexus-log-box" class="log-box" style="height:320px;"></div>
+      </div>
+
+    </div>
+
+    <!-- Memory summary -->
+    <div class="card" style="margin-top:12px;">
+      <div class="card-title">Nexus Memory Snapshot</div>
+      <div id="nexus-memory" class="code-block" style="max-height:120px; overflow-y:auto; white-space:pre-wrap; font-size:11px;">(loading…)</div>
     </div>
   </section>
 
@@ -1149,6 +1253,7 @@ function handleWsMessage({ type, data }) {
       break;
     case 'log-line':
       appendLog(data.source, data.line);
+      maybeAppendNexusLog(data.source, data.line);
       break;
   }
 }
@@ -1941,7 +2046,105 @@ async function init() {
   // Redraw map every 2s
   setInterval(drawMap, 2000);
 
+  // Poll orchestrator panel every 10s
+  refreshOrchestratorPanel();
+  setInterval(refreshOrchestratorPanel, 10000);
+
   initScrollSpy();
+}
+
+// =====================================================================
+//  ORCHESTRATOR — NEXUS
+// =====================================================================
+let nexusDirectiveCount = 0;
+let nexusAutoScroll = true;
+const NEXUS_LOG_MAX = 400;
+const nexusLogBuf = [];
+
+// Called from the WS log-line handler — filter for Nexus-relevant lines
+function maybeAppendNexusLog(source, line) {
+  if (source !== 'mindcraft') return;
+  const isNexus = /Nexus/i.test(line) ||
+                  /llama3\.3/i.test(line) ||
+                  /startConversation/i.test(line);
+  if (!isNexus) return;
+
+  const box = document.getElementById('nexus-log-box');
+  if (!box) return;
+
+  // Detect directives: lines like startConversation('Target', '...')
+  const directiveMatch = line.match(/startConversation\(['"]([^'"]+)['"]\s*,\s*['"]([^'"]*)['"]\)/);
+  if (directiveMatch) {
+    addNexusDirective(directiveMatch[1], directiveMatch[2]);
+  }
+
+  nexusLogBuf.push(line);
+  if (nexusLogBuf.length > NEXUS_LOG_MAX) nexusLogBuf.shift();
+
+  const el = document.createElement('div');
+  el.className = 'log-line ' + classifyLogLine(line);
+  el.textContent = line;
+  box.appendChild(el);
+
+  if (nexusAutoScroll) box.scrollTop = box.scrollHeight;
+}
+
+function addNexusDirective(target, message) {
+  nexusDirectiveCount++;
+  document.getElementById('nexus-directive-count').textContent = nexusDirectiveCount;
+  document.getElementById('nexus-last-target').textContent = target;
+  document.getElementById('nexus-feed-count').textContent = nexusDirectiveCount;
+
+  const now = new Date().toLocaleTimeString();
+  const feed = document.getElementById('nexus-directive-feed');
+  if (!feed) return;
+
+  const item = document.createElement('div');
+  item.className = 'directive-item';
+  item.innerHTML = `<span class="d-ts">${now}</span><span class="d-target">${target}</span><span class="d-msg">${message}</span>`;
+  feed.appendChild(item);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+function toggleNexusScroll() {
+  nexusAutoScroll = !nexusAutoScroll;
+  const btn = document.querySelector('[onclick="toggleNexusScroll()"]');
+  if (btn) btn.textContent = nexusAutoScroll ? '↓ Auto-scroll ON' : '↓ Auto-scroll OFF';
+}
+
+function clearNexusLog() {
+  nexusLogBuf.length = 0;
+  const box = document.getElementById('nexus-log-box');
+  if (box) box.innerHTML = '';
+}
+
+async function refreshOrchestratorPanel() {
+  try {
+    const d = await apiFetch('/api/orchestrator');
+
+    const state = d.state;
+    if (state) {
+      const gp = state.gameplay || {};
+      const pos = gp.position;
+      document.getElementById('nexus-status').textContent = state.online ? 'online' : 'offline';
+      document.getElementById('nexus-last-action').textContent = state.action?.current || '—';
+      document.getElementById('nexus-position').textContent = pos
+        ? `${Math.round(pos.x)}, ${Math.round(pos.y)}, ${Math.round(pos.z)}`
+        : '—';
+      document.getElementById('nexus-health').textContent =
+        gp.health != null ? `${gp.health} / ${gp.hunger}` : '—';
+
+      const statusEl = document.getElementById('nexus-status');
+      statusEl.style.color = state.online ? '#69f0ae' : '#e57373';
+    }
+
+    if (d.memory) {
+      const memEl = document.getElementById('nexus-memory');
+      if (memEl) memEl.textContent = typeof d.memory === 'string'
+        ? d.memory
+        : JSON.stringify(d.memory, null, 2);
+    }
+  } catch (_) {}
 }
 
 document.addEventListener('DOMContentLoaded', init);
