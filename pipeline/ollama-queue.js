@@ -4,7 +4,7 @@
 // 7B requests queue separately from 14B requests
 // Agents point to :11435, this proxies to Ollama on :11434
 
-import http from 'node:http';
+const http = require('http');
 
 const OLLAMA_HOST = '127.0.0.1';
 const OLLAMA_PORT = 11434;

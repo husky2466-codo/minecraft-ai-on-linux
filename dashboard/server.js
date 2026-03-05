@@ -140,13 +140,15 @@ const STOP_CMD =
   'MCPID=$(ss -Htlnp src :8080 | grep -oP "pid=\\K[0-9]+" | head -1); ' +
   '[ -n "$MCPID" ] && kill -9 $MCPID 2>/dev/null; ' +
   'pkill -9 -f "init_agent.js" 2>/dev/null; ' +
-  'pkill -f "server.jar" 2>/dev/null; pkill -f "chroma run" 2>/dev/null; sleep 3; echo "Stopped"';
+  'pkill -f "server.jar" 2>/dev/null; pkill -f "chroma run" 2>/dev/null; pkill -f "ollama-queue.js" 2>/dev/null; sleep 3; echo "Stopped"';
 
 const START_CMD =
   // ChromaDB
   `nohup bash ~/chromadb/start.sh > ~/chromadb/chroma.log 2>&1 & sleep 5; ` +
   // Minecraft server
   `cd ~/minecraft-server; nohup java -Xmx8G -Xms4G -jar server.jar nogui > server.log 2>&1 & sleep 30; ` +
+  // Ollama queue proxy — serializes 7b/14b requests to prevent model-swap thrashing
+  `cd ${PROJECT}; nohup ${NODE} pipeline/ollama-queue.js > ~/ollama-queue.log 2>&1 & sleep 2; ` +
   // MindCraft — all 6 agents from settings.js
   `cd ${PROJECT}/mindcraft; ${PATH_PREFIX} nohup ${NODE} main.js > ~/mindcraft.log 2>&1 & echo "Stack started"`;
 
