@@ -135,9 +135,11 @@ const NODE = '$HOME/.nvm/versions/node/v22.22.0/bin/node';
 const PATH_PREFIX = 'PATH=$HOME/.nvm/versions/node/v22.22.0/bin:$HOME/.local/bin:$PATH';
 
 // Use semicolons (not &&) after background jobs — zsh/bash both handle this correctly
+// Kill MindCraft: get PID holding port 8080 and SIGKILL it + all init_agent children
 const STOP_CMD =
-  'pkill -9 -f "init_agent.js" 2>/dev/null; pkill -9 -f "node main.js" 2>/dev/null; ' +
-  'fuser -k 8080/tcp; ' +
+  'MCPID=$(ss -Htlnp src :8080 | grep -oP "pid=\\K[0-9]+" | head -1); ' +
+  '[ -n "$MCPID" ] && kill -9 $MCPID 2>/dev/null; ' +
+  'pkill -9 -f "init_agent.js" 2>/dev/null; ' +
   'pkill -f "server.jar" 2>/dev/null; pkill -f "chroma run" 2>/dev/null; sleep 3; echo "Stopped"';
 
 const START_CMD =
